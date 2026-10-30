@@ -16,6 +16,7 @@ interface ProjectState {
   deleteFile: (path: string) => void
   openFile: (path: string) => void
   closeFile: (path: string) => void
+  markRun: () => void
   setSaveStatus: (status: SaveStatus) => void
   setStorageError: (message: string | null) => void
 }
@@ -30,6 +31,7 @@ const createDefaultProject = (): Project => ({
   directories: [],
   openFiles: ['main.py', 'utils.py'],
   activeFile: 'main.py',
+  createdAt: Date.now(),
   updatedAt: Date.now(),
 })
 
@@ -176,6 +178,10 @@ export const useProjectStore = create<ProjectState>((set) => ({
         }),
       }
     }),
+  markRun: () =>
+    set((state) => ({
+      ...setProject({ ...state.project, lastRunAt: Date.now() }),
+    })),
   setSaveStatus: (saveStatus) => set({ saveStatus }),
   setStorageError: (storageError) => set({ storageError }),
 }))

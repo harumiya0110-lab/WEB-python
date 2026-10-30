@@ -24,6 +24,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { editor as Monaco } from 'monaco-editor'
 import type { CSSProperties, FormEvent, ReactNode } from 'react'
+import { useParams } from 'react-router-dom'
 import { usePythonRuntime } from '../hooks/usePythonRuntime'
 import { loadProject, saveProject } from '../services/localProjectService'
 import { createDefaultProject, useProjectStore } from '../store/projectStore'
@@ -35,6 +36,8 @@ type FileDialogState =
   | { kind: 'file'; initialValue: string }
   | { kind: 'folder'; initialValue: string }
   | { kind: 'rename'; path: string; initialValue: string }
+
+const projectSaveTimers = new Map<string, number>()
 
 const fileLanguage = (path: string): string => {
   const extension = path.split('.').pop()?.toLowerCase()
@@ -128,6 +131,8 @@ function ResizeHandle({
 }
 
 export function EditorPage() {
+  const { projectId: routeProjectId } = useParams()
+  const selectedProjectId = routeProjectId ?? 'guest-workspace'
   const project = useProjectStore((state) => state.project)
   const initialized = useProjectStore((state) => state.initialized)
   const saveStatus = useProjectStore((state) => state.saveStatus)
@@ -142,6 +147,7 @@ export function EditorPage() {
   const deleteFile = useProjectStore((state) => state.deleteFile)
   const openFile = useProjectStore((state) => state.openFile)
   const closeFile = useProjectStore((state) => state.closeFile)
+  const markRun = useProjectStore((state) => state.markRun)
   const setSaveStatus = useProjectStore((state) => state.setSaveStatus)
   const setStorageError = useProjectStore((state) => state.setStorageError)
   const {
@@ -186,7 +192,7 @@ export function EditorPage() {
   } | null>(null)
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const editorRef = useRef<Monaco.IStandaloneCodeEditor | null>(null)
-  const saveTimer = useRef<number | undefined>(undefined)
+  const isMountedRef = useRef(false)
   const notificationTimer = useRef<number | undefined>(undefined)
   const [search, setSearch] = useState('')
 
@@ -196,14 +202,24 @@ export function EditorPage() {
     notificationTimer.current = window.setTimeout(() => setNotification(''), 2600)
   }, [])
 
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
+
   const initializeProject = useCallback(async () => {
     try {
-      const existing = await loadProject('guest-workspace')
+      const existing = await loadProject(selectedProjectId)
       if (existing) {
         setSavedFiles(existing.files)
         setStorageError(null)
         initialize(existing)
         return
+      }
+      if (selectedProjectId !== 'guest-workspace') {
+        throw new Error('プロジェクトが見つかりません。一覧から開き直してください。')
       }
       const initialProject = createDefaultProject()
       await saveProject(initialProject)
@@ -216,34 +232,40 @@ export function EditorPage() {
       setStorageError(message)
       setSaveStatus('error')
     }
-  }, [initialize, setSaveStatus, setStorageError])
+  }, [initialize, selectedProjectId, setSaveStatus, setStorageError])
 
   useEffect(() => {
-    if (initialized) return
+    if (initialized && project.id === selectedProjectId) return
     const timer = window.setTimeout(() => void initializeProject(), 0)
     return () => window.clearTimeout(timer)
-  }, [initializeProject, initialized])
+  }, [initializeProject, initialized, project.id, selectedProjectId])
 
   useEffect(() => {
-    if (!initialized) return
-    window.clearTimeout(saveTimer.current)
-    saveTimer.current = window.setTimeout(() => {
-      setSaveStatus('saving')
+    if (!initialized || project.id !== selectedProjectId) return
+    const pendingTimer = projectSaveTimers.get(project.id)
+    if (pendingTimer !== undefined) window.clearTimeout(pendingTimer)
+    const timer = window.setTimeout(() => {
+      projectSaveTimers.delete(project.id)
+      if (useProjectStore.getState().project.id === project.id) {
+        setSaveStatus('saving')
+      }
       void saveProject(project)
         .then(() => {
-          setSavedFiles(project.files)
+          if (useProjectStore.getState().project.id !== project.id) return
+          if (isMountedRef.current) setSavedFiles(project.files)
           setStorageError(null)
           setSaveStatus('saved')
         })
         .catch((error: unknown) => {
+          if (useProjectStore.getState().project.id !== project.id) return
           setStorageError(
             error instanceof Error ? error.message : '保存に失敗しました。',
           )
           setSaveStatus('error')
         })
     }, 650)
-    return () => window.clearTimeout(saveTimer.current)
-  }, [initialized, project, setSaveStatus, setStorageError])
+    projectSaveTimers.set(project.id, timer)
+  }, [initialized, project, project.id, selectedProjectId, setSaveStatus, setStorageError])
 
   useEffect(
     () => () => {
@@ -253,7 +275,11 @@ export function EditorPage() {
   )
 
   const saveNow = useCallback(async () => {
-    window.clearTimeout(saveTimer.current)
+    const pendingTimer = projectSaveTimers.get(project.id)
+    if (pendingTimer !== undefined) {
+      window.clearTimeout(pendingTimer)
+      projectSaveTimers.delete(project.id)
+    }
     setSaveStatus('saving')
     try {
       await saveProject(project)
@@ -282,8 +308,9 @@ export function EditorPage() {
     setPanelVisibility({ showTerminal: true })
     setTerminalTab('output')
     const started = run(project.files, project.activeFile)
+    if (started) markRun()
     if (!started) notify('Python環境の準備完了後に実行できます')
-  }, [notify, project.activeFile, project.files, run, setPanelVisibility])
+  }, [markRun, notify, project.activeFile, project.files, run, setPanelVisibility])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

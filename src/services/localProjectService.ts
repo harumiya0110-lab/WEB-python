@@ -30,7 +30,17 @@ export async function loadProject(id: string): Promise<Project | undefined> {
   return database.get('projects', id)
 }
 
+export async function listProjects(): Promise<Project[]> {
+  const database = await getDatabase()
+  return database.getAll('projects')
+}
+
 export async function saveProject(project: Project): Promise<void> {
   const database = await getDatabase()
   await database.put('projects', project)
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  const database = await getDatabase()
+  await database.delete('projects', id)
 }

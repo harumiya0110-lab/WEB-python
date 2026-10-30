@@ -1,11 +1,14 @@
 export interface Project {
   id: string
   name: string
+  description?: string
   files: Record<string, string>
   directories: string[]
   openFiles: string[]
   activeFile: string
+  createdAt?: number
   updatedAt: number
+  lastRunAt?: number
 }
 
 export type SaveStatus = 'loading' | 'saving' | 'saved' | 'error'

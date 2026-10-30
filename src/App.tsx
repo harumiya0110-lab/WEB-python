@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from './components/layout/AppLayout'
 import { HomePage } from './pages/HomePage'
 import { EditorPage } from './pages/EditorPage'
+import { ProjectsPage } from './pages/ProjectsPage'
 import { PlaceholderPage } from './pages/PlaceholderPage'
 import { useSettingsStore } from './store/settingsStore'
 import './App.css'
@@ -19,16 +20,8 @@ function AppRoutes() {
       <Routes>
         <Route element={<AppLayout />}>
           <Route index element={<HomePage />} />
-          <Route path="editor/*" element={<EditorPage />} />
-          <Route
-            path="projects"
-            element={
-              <PlaceholderPage
-                title="プロジェクト"
-                description="作成したプロジェクトをまとめて管理できます。"
-              />
-            }
-          />
+          <Route path="editor/:projectId?" element={<EditorPage />} />
+          <Route path="projects" element={<ProjectsPage />} />
           <Route
             path="templates"
             element={
