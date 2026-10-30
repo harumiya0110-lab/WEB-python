@@ -15,6 +15,8 @@ const MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
 const MAX_ARCHIVE_FILES = 100
 const MAX_TOTAL_UNCOMPRESSED_BYTES = 20 * 1024 * 1024
 const MAX_FILE_BYTES = 2 * 1024 * 1024
+const MAX_BACKUP_ITEMS = 100
+const MAX_BACKUP_FAVORITES = 1_000
 const SUPPORTED_TEXT_EXTENSIONS = new Set([
   '.py', '.txt', '.md', '.csv', '.json', '.html', '.css', '.js', '.ts', '.yaml', '.yml', '.xml',
 ])
@@ -35,6 +37,13 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item: unknown): item is string => typeof item === 'string')
 }
 
+function containsControlCharacters(value: string): boolean {
+  return [...value].some((character) => {
+    const code = character.codePointAt(0) ?? 0
+    return code < 32 || (code >= 127 && code <= 159)
+  })
+}
+
 export interface BackupSnapshot {
   projects: Project[]
   templates: UserTemplate[]
@@ -47,7 +56,7 @@ function assertSafePath(path: string): void {
   if (
     !isValidProjectPath(path) ||
     path.includes(':') ||
-    path.includes('\0') ||
+    containsControlCharacters(path) ||
     segments.some((segment) => segment.endsWith('.') || segment.endsWith(' ')) ||
     hasWindowsDeviceName
   ) {
@@ -64,35 +73,37 @@ function assertTextFile(path: string): void {
 }
 
 function assertProjectFiles(files: Record<string, string>, directories: string[], activeFile: string): void {
-  const filePaths = new Set<string>()
+  if (directories.length > MAX_ARCHIVE_FILES) {
+    throw new Error('プロジェクト内のフォルダー数が上限（100件）を超えています。')
+  }
+  const nodes = new Map<string, { type: 'file' | 'directory'; path: string }>()
   for (const [path, content] of Object.entries(files)) {
     assertTextFile(path)
     const normalizedPath = path.normalize('NFC').toLocaleLowerCase('en-US')
-    if (filePaths.has(normalizedPath)) throw new Error(`ファイル名が重複しています: ${path}`)
     if (typeof content !== 'string') throw new Error(`ファイルの内容がテキストではありません: ${path}`)
-    filePaths.add(normalizedPath)
+    if (nodes.has(normalizedPath)) throw new Error(`ファイル名が重複しています: ${path}`)
+    nodes.set(normalizedPath, { type: 'file', path })
   }
-  const directoryPaths = new Set<string>()
   for (const directory of directories) {
     assertSafePath(directory)
     const normalizedPath = directory.normalize('NFC').toLocaleLowerCase('en-US')
-    if (filePaths.has(normalizedPath) || directoryPaths.has(normalizedPath)) {
+    const existing = nodes.get(normalizedPath)
+    if (existing && (existing.type !== 'directory' || existing.path !== directory)) {
       throw new Error(`ファイルとフォルダーが競合しています: ${directory}`)
     }
-    directoryPaths.add(normalizedPath)
+    if (!existing) nodes.set(normalizedPath, { type: 'directory', path: directory })
   }
-  for (const path of Object.keys(files)) {
+  for (const path of [...Object.keys(files), ...directories]) {
     const segments = path.split('/')
     for (let index = 1; index < segments.length; index += 1) {
-      const parent = segments.slice(0, index).join('/').normalize('NFC').toLocaleLowerCase('en-US')
-      if (filePaths.has(parent)) throw new Error(`ファイルとフォルダーが競合しています: ${parent}`)
-    }
-  }
-  for (const directory of directories) {
-    const segments = directory.split('/')
-    for (let index = 1; index < segments.length; index += 1) {
-      const parent = segments.slice(0, index).join('/').normalize('NFC').toLocaleLowerCase('en-US')
-      if (filePaths.has(parent)) throw new Error(`ファイルとフォルダーが競合しています: ${parent}`)
+      const parent = segments.slice(0, index).join('/')
+      const key = parent.normalize('NFC').toLocaleLowerCase('en-US')
+      const existing = nodes.get(key)
+      if (existing?.type === 'file') throw new Error(`ファイルとフォルダーが競合しています: ${parent}`)
+      if (existing && existing.path !== parent) {
+        throw new Error(`パスの大文字・小文字またはUnicode表記が競合しています: ${parent}`)
+      }
+      if (!existing) nodes.set(key, { type: 'directory', path: parent })
     }
   }
   if (!Object.keys(files).some((path) => path.toLowerCase().endsWith('.py'))) {
@@ -170,7 +181,10 @@ export function sanitizeArchiveFilename(name: string): string {
     .normalize('NFKC')
     .replace(/[<>:"/\\|?*]/g, '_')
     .split('')
-    .map((character) => character.charCodeAt(0) < 32 ? '_' : character)
+    .map((character) => {
+      const code = character.charCodeAt(0)
+      return code < 32 || (code >= 127 && code <= 159) ? '_' : character
+    })
     .join('')
     .replace(/[. ]+$/g, '')
     .trim()
@@ -210,18 +224,37 @@ export function exportTemplateArchive(template: UserTemplate): Uint8Array {
 }
 
 export function exportBackupArchive(snapshot: BackupSnapshot, now = Date.now()): Uint8Array {
+  if (snapshot.projects.length + snapshot.templates.length > MAX_BACKUP_ITEMS ||
+      snapshot.favoriteIds.length > MAX_BACKUP_FAVORITES ||
+      new Set(snapshot.favoriteIds).size !== snapshot.favoriteIds.length ||
+      snapshot.favoriteIds.some((id) => !id || id.length > 256 || containsControlCharacters(id))) {
+    throw new Error('バックアップ内のデータ件数またはお気に入り情報が不正です。')
+  }
   const contentFiles: Record<string, string> = {}
+  const projectIds = new Set<string>()
   const projects: BackupProjectMetadata[] = snapshot.projects.map((project) => {
+    if (!project.id || project.id.length > 256 || containsControlCharacters(project.id) ||
+        project.id.includes('/') || project.id.includes('\\') || projectIds.has(project.id)) {
+      throw new Error('バックアップ内のプロジェクトIDが不正か重複しています。')
+    }
+    projectIds.add(project.id)
     assertProjectFiles(project.files, project.directories, project.activeFile)
     const filePaths = Object.keys(project.files)
     for (const path of filePaths) contentFiles[`backup/projects/${encodeURIComponent(project.id)}/${path}`] = project.files[path]
     return {
       ...project,
+      description: project.description ?? '',
       files: filePaths,
       directories: [...project.directories],
     }
   })
+  const templateIds = new Set<string>()
   const templates: BackupTemplateMetadata[] = snapshot.templates.map((template) => {
+    if (!template.id || template.id.length > 256 || containsControlCharacters(template.id) ||
+        template.id.includes('/') || template.id.includes('\\') || templateIds.has(template.id)) {
+      throw new Error('バックアップ内のテンプレートIDが不正か重複しています。')
+    }
+    templateIds.add(template.id)
     assertProjectFiles(template.files, template.directories, template.activeFile)
     const filePaths = Object.keys(template.files)
     for (const path of filePaths) contentFiles[`backup/templates/${encodeURIComponent(template.id)}/${path}`] = template.files[path]
@@ -288,6 +321,9 @@ function inspectCentralDirectory(bytes: Uint8Array): CentralDirectoryFile[] {
   const directoryNames = new Set<string>()
   let offset = directoryOffset
   while (offset < directoryOffset + directorySize) {
+    if (result.length >= MAX_ARCHIVE_FILES * 2) {
+      throw new Error('ZIP内のファイルとフォルダー数が上限を超えています。')
+    }
     if (readUint32(bytes, offset) !== 0x02014b50 || offset + 46 > bytes.length) {
       throw new Error('ZIPのファイル情報が不正です。')
     }
@@ -367,6 +403,9 @@ function validateManifest(value: unknown): PyStudioArchiveManifest {
   if (typeof value.name !== 'string' || !value.name.trim() || typeof value.description !== 'string') {
     throw new Error('manifestの名前または説明が不正です。')
   }
+  if (value.name.length > 200 || value.description.length > 10_000) {
+    throw new Error('manifestの名前または説明が長すぎます。')
+  }
   if (!Array.isArray(value.files) || !Array.isArray(value.directories)) {
     throw new Error('manifestのファイル構成が不正です。')
   }
@@ -376,8 +415,9 @@ function validateManifest(value: unknown): PyStudioArchiveManifest {
       throw new Error('manifestのファイル情報が不正です。')
     }
     assertTextFile(entry.path)
-    if (paths.has(entry.path)) throw new Error(`manifest内でパスが重複しています: ${entry.path}`)
-    paths.add(entry.path)
+    const key = entry.path.normalize('NFC').toLocaleLowerCase('en-US')
+    if (paths.has(key)) throw new Error(`manifest内でパスが重複しています: ${entry.path}`)
+    paths.add(key)
     return { path: entry.path, size: Number(entry.size) }
   })
   const directories = value.directories.map((directory: unknown) => {
@@ -385,7 +425,27 @@ function validateManifest(value: unknown): PyStudioArchiveManifest {
     assertSafePath(directory)
     return directory
   })
-  if (new Set(directories).size !== directories.length || directories.some((directory: string) => paths.has(directory))) {
+  const directoryPaths = new Set<string>()
+  for (const directory of directories) {
+    const key = directory.normalize('NFC').toLocaleLowerCase('en-US')
+    if (directoryPaths.has(key) || paths.has(key)) {
+      throw new Error('manifest内でファイルとフォルダーが重複しています。')
+    }
+    directoryPaths.add(key)
+  }
+  if (directories.some((directory: string) => {
+    const parts = directory.split('/')
+    return parts.slice(1).some((_, index) => {
+      const parent = parts.slice(0, index + 1).join('/').normalize('NFC').toLocaleLowerCase('en-US')
+      return paths.has(parent)
+    })
+  }) || files.some(({ path }) => {
+    const parts = path.split('/')
+    return parts.slice(1).some((_, index) => {
+      const parent = parts.slice(0, index + 1).join('/').normalize('NFC').toLocaleLowerCase('en-US')
+      return paths.has(parent)
+    })
+  })) {
     throw new Error('manifest内でファイルとフォルダーが重複しています。')
   }
   if (
@@ -406,9 +466,60 @@ function validateManifest(value: unknown): PyStudioArchiveManifest {
   )) {
     throw new Error('manifestのテンプレートカテゴリーまたは難易度が不正です。')
   }
-  if (value.kind === 'backup' && !isRecord(value.backup)) throw new Error('バックアップ情報がmanifestにありません。')
-  if (files.length > MAX_ARCHIVE_FILES) throw new Error('manifestのファイル数が上限（100件）を超えています。')
+  if (value.kind === 'backup') {
+    if (!isRecord(value.backup) || !Array.isArray(value.backup.projects) ||
+        !Array.isArray(value.backup.templates) || !Array.isArray(value.backup.favoriteIds)) {
+      throw new Error('バックアップ情報がmanifestにありません。')
+    }
+    if (value.backup.projects.length + value.backup.templates.length > MAX_BACKUP_ITEMS ||
+        value.backup.favoriteIds.length > MAX_BACKUP_FAVORITES) {
+      throw new Error('バックアップ内のデータ件数が上限を超えています。')
+    }
+  }
+  if (files.length > MAX_ARCHIVE_FILES || directories.length > MAX_ARCHIVE_FILES) {
+    throw new Error('manifestのファイルまたはフォルダー数が上限（100件）を超えています。')
+  }
   return value as unknown as PyStudioArchiveManifest
+}
+
+function expectedArchiveDirectories(manifest: PyStudioArchiveManifest): Set<string> {
+  const expected = new Set<string>()
+  const addDirectory = (path: string) => {
+    const segments = path.split('/')
+    for (let index = 1; index <= segments.length; index += 1) {
+      expected.add(segments.slice(0, index).join('/').normalize('NFC').toLocaleLowerCase('en-US'))
+    }
+  }
+  const addFileParents = (path: string) => {
+    const segments = path.split('/')
+    for (let index = 1; index < segments.length; index += 1) {
+      expected.add(segments.slice(0, index).join('/').normalize('NFC').toLocaleLowerCase('en-US'))
+    }
+  }
+  for (const entry of manifest.files) {
+    addFileParents(manifest.kind === 'backup' ? entry.path : `files/${entry.path}`)
+  }
+  if (manifest.kind === 'backup' && manifest.backup) {
+    for (const [kind, items] of [
+      ['projects', manifest.backup.projects],
+      ['templates', manifest.backup.templates],
+    ] as const) {
+      for (const item of items) {
+        if (!isRecord(item) || typeof item.id !== 'string' || !isStringArray(item.directories)) continue
+        let id: string
+        try {
+          id = encodeURIComponent(item.id)
+        } catch (error) {
+          throw new Error('バックアップ内のデータIDが不正です。', { cause: error })
+        }
+        for (const directory of item.directories) addDirectory(`backup/${kind}/${id}/${directory}`)
+      }
+    }
+  } else {
+    expected.add('files')
+    for (const directory of manifest.directories) addDirectory(`files/${directory}`)
+  }
+  return expected
 }
 
 export async function parsePyStudioArchive(file: Blob): Promise<ParsedPyStudioArchive> {
@@ -524,6 +635,15 @@ export async function parsePyStudioArchive(file: Blob): Promise<ParsedPyStudioAr
     throw new Error('pystudio.jsonのJSON形式が不正です。', { cause: error })
   }
   const manifest = validateManifest(rawManifest)
+  const allowedDirectories = expectedArchiveDirectories(manifest)
+  for (const entry of centralFiles) {
+    if (entry.isDirectory) {
+      const path = entry.name.slice(0, -1).normalize('NFC').toLocaleLowerCase('en-US')
+      if (!allowedDirectories.has(path)) {
+        throw new Error(`manifestにないフォルダーがZIPに含まれています: ${entry.name}`)
+      }
+    }
+  }
   const expectedArchivePaths = new Set(['pystudio.json', 'README.md'])
   const files: Record<string, string> = {}
   for (const entry of manifest.files) {
@@ -541,6 +661,8 @@ export async function parsePyStudioArchive(file: Blob): Promise<ParsedPyStudioAr
   if (!centralNames.has('pystudio.json')) throw new Error('ZIP内にpystudio.jsonがありません。')
   if (manifest.kind !== 'backup') {
     assertProjectFiles(files, manifest.directories, manifest.activeFile)
+  } else {
+    backupSnapshotFromArchive({ manifest, files })
   }
   return { manifest, files }
 }
@@ -592,14 +714,18 @@ export function importedProjectFields(archive: ParsedPyStudioArchive): Omit<Proj
 export function backupSnapshotFromArchive(archive: ParsedPyStudioArchive): BackupSnapshot {
   const metadata = archive.manifest.backup
   if (archive.manifest.kind !== 'backup' || !metadata || !Array.isArray(metadata.projects) ||
-      !Array.isArray(metadata.templates) || !Array.isArray(metadata.favoriteIds)) {
+      !Array.isArray(metadata.templates) || !Array.isArray(metadata.favoriteIds) ||
+      metadata.projects.length + metadata.templates.length > MAX_BACKUP_ITEMS ||
+      metadata.favoriteIds.length > MAX_BACKUP_FAVORITES ||
+      Object.keys(archive.files).length > MAX_ARCHIVE_FILES) {
     throw new Error('バックアップのメタデータが不正です。')
   }
   const projectIds = new Set<string>()
   const templateIds = new Set<string>()
   const referencedArchivePaths = new Set<string>()
   const readFiles = (kind: 'projects' | 'templates', id: string, paths: unknown): Record<string, string> => {
-    if (!id || id.includes('/') || id.includes('\\') || !isStringArray(paths)) {
+    if (!id || id.length > 256 || containsControlCharacters(id) ||
+        id.includes('/') || id.includes('\\') || !isStringArray(paths)) {
       throw new Error('バックアップ内のデータIDまたはファイル一覧が不正です。')
     }
     const files: Record<string, string> = {}
@@ -617,7 +743,13 @@ export function backupSnapshotFromArchive(archive: ParsedPyStudioArchive): Backu
   const projects: Project[] = metadata.projects.map((entry) => {
     if (!isRecord(entry) || typeof entry.id !== 'string' || projectIds.has(entry.id) ||
         typeof entry.name !== 'string' || !entry.name.trim() || typeof entry.activeFile !== 'string' ||
-        !isStringArray(entry.directories) || !isStringArray(entry.files)) {
+        typeof entry.description !== 'string' || entry.description.length > 10_000 ||
+        !isStringArray(entry.directories) || entry.directories.length > MAX_ARCHIVE_FILES ||
+        !isStringArray(entry.files) || entry.files.length > MAX_ARCHIVE_FILES ||
+        (entry.createdAt !== undefined && (typeof entry.createdAt !== 'number' || !Number.isFinite(entry.createdAt))) ||
+        typeof entry.updatedAt !== 'number' || !Number.isFinite(entry.updatedAt) ||
+        (entry.lastRunAt !== undefined && (typeof entry.lastRunAt !== 'number' || !Number.isFinite(entry.lastRunAt))) ||
+        (entry.openFiles !== undefined && !isStringArray(entry.openFiles))) {
       throw new Error('バックアップ内のプロジェクト情報が不正です。')
     }
     projectIds.add(entry.id)
@@ -627,7 +759,7 @@ export function backupSnapshotFromArchive(archive: ParsedPyStudioArchive): Backu
     return {
       id: entry.id,
       name: entry.name,
-      description: typeof entry.description === 'string' ? entry.description : '',
+      description: entry.description,
       files,
       directories: [...directories],
       openFiles: [...new Set([
@@ -635,16 +767,22 @@ export function backupSnapshotFromArchive(archive: ParsedPyStudioArchive): Backu
         entry.activeFile,
       ])],
       activeFile: entry.activeFile,
-      createdAt: typeof entry.createdAt === 'number' ? entry.createdAt : undefined,
-      updatedAt: typeof entry.updatedAt === 'number' ? entry.updatedAt : Date.now(),
-      lastRunAt: typeof entry.lastRunAt === 'number' ? entry.lastRunAt : undefined,
+      createdAt: entry.createdAt,
+      updatedAt: entry.updatedAt,
+      lastRunAt: entry.lastRunAt,
     }
   })
   const templates: UserTemplate[] = metadata.templates.map((entry) => {
     if (!isRecord(entry) || typeof entry.id !== 'string' || templateIds.has(entry.id) ||
         typeof entry.name !== 'string' || !entry.name.trim() || typeof entry.activeFile !== 'string' ||
         !isStringArray(entry.directories) || !isStringArray(entry.files) ||
-        !isTemplateCategory(entry.category)) {
+        typeof entry.description !== 'string' || entry.description.length > 10_000 ||
+        !isTemplateCategory(entry.category) ||
+        entry.directories.length > MAX_ARCHIVE_FILES || entry.files.length > MAX_ARCHIVE_FILES ||
+        (entry.tags !== undefined && !isStringArray(entry.tags)) ||
+        (entry.difficulty !== undefined && !isTemplateDifficulty(entry.difficulty)) ||
+        typeof entry.createdAt !== 'number' || !Number.isFinite(entry.createdAt) ||
+        typeof entry.updatedAt !== 'number' || !Number.isFinite(entry.updatedAt)) {
       throw new Error('バックアップ内のテンプレート情報が不正です。')
     }
     templateIds.add(entry.id)
@@ -654,18 +792,22 @@ export function backupSnapshotFromArchive(archive: ParsedPyStudioArchive): Backu
     return {
       id: entry.id,
       name: entry.name,
-      description: typeof entry.description === 'string' ? entry.description : '',
-      tags: Array.isArray(entry.tags) ? entry.tags.filter((tag): tag is string => typeof tag === 'string') : [],
+      description: entry.description,
+      tags: entry.tags ?? [],
       category: entry.category,
-      difficulty: isTemplateDifficulty(entry.difficulty) ? entry.difficulty : undefined,
+      difficulty: entry.difficulty,
       files,
       directories: [...directories],
       activeFile: entry.activeFile,
-      createdAt: typeof entry.createdAt === 'number' ? entry.createdAt : Date.now(),
-      updatedAt: typeof entry.updatedAt === 'number' ? entry.updatedAt : Date.now(),
+      createdAt: entry.createdAt,
+      updatedAt: entry.updatedAt,
     }
   })
-  if (metadata.favoriteIds.some((id) => typeof id !== 'string')) throw new Error('バックアップのお気に入り情報が不正です。')
+  if (metadata.favoriteIds.length > MAX_BACKUP_FAVORITES ||
+      metadata.favoriteIds.some((id) => typeof id !== 'string' || !id || id.length > 256 || containsControlCharacters(id)) ||
+      new Set(metadata.favoriteIds).size !== metadata.favoriteIds.length) {
+    throw new Error('バックアップのお気に入り情報が不正です。')
+  }
   const favoriteFile = archive.files['backup/favorites.json']
   if (favoriteFile !== undefined) {
     referencedArchivePaths.add('backup/favorites.json')

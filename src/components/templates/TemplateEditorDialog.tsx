@@ -1,10 +1,20 @@
 import Editor from '@monaco-editor/react'
-import { Copy, FileCode2, FilePlus2, Folder, FolderPlus, Save, Trash2, X } from 'lucide-react'
+import { Copy, FileCode2, FilePlus2, Folder, FolderPlus, Pencil, Save, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { UserTemplate, TemplateCategory, TemplateDifficulty } from '../../types/template'
-import { isValidProjectPath } from '../../types/project'
 import { templateCategories } from '../../templates/templateCatalog'
+import {
+  addTemplateFile,
+  createTemplateFolder,
+  deleteTemplateFile as removeTemplateFile,
+  deleteTemplateFolder as removeTemplateFolder,
+  duplicateTemplateFile,
+  getMonacoLanguageForPath,
+  renameTemplateFile,
+  renameTemplateFolder,
+  validateTemplateFileTree,
+} from '../../templates/templateFileUtils'
 
 interface TemplateEditorDialogProps {
   template: UserTemplate
@@ -13,34 +23,7 @@ interface TemplateEditorDialogProps {
   onClose: () => void
 }
 
-type FileAction = 'new-file' | 'new-folder' | 'rename' | null
-
-function isValidTree(files: Record<string, string>, directories: string[], activeFile: string): string {
-  const filePaths = Object.keys(files)
-  if (filePaths.length === 0 || !filePaths.some((path) => path.toLowerCase().endsWith('.py'))) {
-    return 'Pythonファイルを最低1つ作成してください。'
-  }
-  if (!Object.hasOwn(files, activeFile) || !activeFile.toLowerCase().endsWith('.py')) {
-    return '開始ファイルは存在するPythonファイルを選択してください。'
-  }
-  const allPaths = new Set<string>()
-  for (const path of [...filePaths, ...directories]) {
-    if (!isValidProjectPath(path) || path.includes(':')) return `安全でないパスです: ${path}`
-    const normalizedPath = path.normalize('NFC').toLocaleLowerCase('en-US')
-    if (allPaths.has(normalizedPath)) return `ファイル名またはフォルダー名が重複しています: ${path}`
-    allPaths.add(normalizedPath)
-  }
-  const normalizedFiles = new Set(filePaths.map((path) => path.normalize('NFC').toLocaleLowerCase('en-US')))
-  for (const file of [...filePaths, ...directories]) {
-    const segments = file.split('/')
-    for (let index = 1; index < segments.length; index += 1) {
-      if (normalizedFiles.has(segments.slice(0, index).join('/').normalize('NFC').toLocaleLowerCase('en-US'))) {
-        return 'ファイルとフォルダーのパスが競合しています。'
-      }
-    }
-  }
-  return ''
-}
+type FileAction = 'new-file' | 'new-folder' | 'rename' | 'rename-folder' | null
 
 export function TemplateEditorDialog({ template, busy, onSave, onClose }: TemplateEditorDialogProps) {
   const [baseline, setBaseline] = useState(template)
@@ -55,6 +38,7 @@ export function TemplateEditorDialog({ template, busy, onSave, onClose }: Templa
   const [selectedFile, setSelectedFile] = useState(template.activeFile)
   const [fileAction, setFileAction] = useState<FileAction>(null)
   const [actionPath, setActionPath] = useState('')
+  const [actionSource, setActionSource] = useState('')
   const [error, setError] = useState('')
   const [saveState, setSaveState] = useState<'saved' | 'unsaved' | 'saving' | 'error'>('saved')
   const original = useMemo(() => JSON.stringify(baseline), [baseline])
@@ -88,87 +72,89 @@ export function TemplateEditorDialog({ template, busy, onSave, onClose }: Templa
   })
 
   const openAction = (action: Exclude<FileAction, null>) => {
+    setActionSource('')
     setActionPath(action === 'rename' ? selectedFile : '')
     setFileAction(action)
+    setError('')
+  }
+
+  const openFolderRename = (path: string) => {
+    setActionSource(path)
+    setActionPath(path)
+    setFileAction('rename-folder')
     setError('')
   }
 
   const applyAction = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const path = actionPath.trim()
-    if (!isValidProjectPath(path) || path.includes(':')) {
-      setError('使用できないファイルパスです。')
-      return
+    try {
+      if (fileAction === 'new-file') {
+        const updated = addTemplateFile({ files, directories, activeFile, selectedFile }, path)
+        setFiles(updated.files)
+        setDirectories(updated.directories)
+        setSelectedFile(updated.selectedFile ?? path)
+      } else if (fileAction === 'new-folder') {
+        const updated = createTemplateFolder({ files, directories, activeFile, selectedFile }, path)
+        setDirectories(updated.directories)
+      } else if (fileAction === 'rename') {
+        const updated = renameTemplateFile({ files, directories, activeFile, selectedFile }, selectedFile, path)
+        setFiles(updated.files)
+        setDirectories(updated.directories)
+        setActiveFile(updated.activeFile)
+        setSelectedFile(updated.selectedFile ?? path)
+      } else if (fileAction === 'rename-folder') {
+        const updated = renameTemplateFolder({ files, directories, activeFile, selectedFile }, actionSource, path)
+        setFiles(updated.files)
+        setDirectories(updated.directories)
+        setActiveFile(updated.activeFile)
+        setSelectedFile(updated.selectedFile ?? '')
+      }
+      setFileAction(null)
+      setActionPath('')
+      setActionSource('')
+      setSaveState('unsaved')
+      setError('')
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'ファイル構成を変更できませんでした。')
     }
-    if (fileAction === 'new-file') {
-      if (Object.hasOwn(files, path) || directories.includes(path)) {
-        setError('同じパスのファイルまたはフォルダーがすでにあります。')
-        return
-      }
-      setFiles((currentFiles) => ({ ...currentFiles, [path]: '' }))
-      setSelectedFile(path)
-    } else if (fileAction === 'new-folder') {
-      if (Object.hasOwn(files, path) || directories.includes(path)) {
-        setError('同じパスのファイルまたはフォルダーがすでにあります。')
-        return
-      }
-      setDirectories((currentDirectories) => [...currentDirectories, path])
-    } else if (fileAction === 'rename') {
-      if (Object.hasOwn(files, path) || directories.includes(path)) {
-        setError('同じパスのファイルまたはフォルダーがすでにあります。')
-        return
-      }
-      setFiles((currentFiles) => {
-        const next = { ...currentFiles }
-        next[path] = next[selectedFile]
-        delete next[selectedFile]
-        return next
-      })
-      if (activeFile === selectedFile) setActiveFile(path)
-      setSelectedFile(path)
-    }
-    setFileAction(null)
-    setActionPath('')
-    setSaveState('unsaved')
   }
 
   const duplicateFile = () => {
-    const dot = selectedFile.lastIndexOf('.')
-    const copyPath = dot > selectedFile.lastIndexOf('/')
-      ? `${selectedFile.slice(0, dot)}_copy${selectedFile.slice(dot)}`
-      : `${selectedFile}_copy`
-    if (Object.hasOwn(files, copyPath) || directories.includes(copyPath)) {
-      setError(`複製先はすでに存在します: ${copyPath}`)
-      return
+    try {
+      const updated = duplicateTemplateFile({ files, directories, activeFile, selectedFile }, selectedFile)
+      setFiles(updated.files)
+      setSelectedFile(updated.selectedFile ?? '')
+      setSaveState('unsaved')
+      setError('')
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'ファイルを複製できませんでした。')
     }
-    setFiles((currentFiles) => ({ ...currentFiles, [copyPath]: currentFiles[selectedFile] }))
-    setSelectedFile(copyPath)
-    setSaveState('unsaved')
   }
 
   const deleteSelectedFile = () => {
     if (!window.confirm(`「${selectedFile}」を削除しますか？`)) return
-    const next = { ...files }
-    delete next[selectedFile]
-    setFiles(next)
-    if (activeFile === selectedFile) setActiveFile(Object.keys(next).find((path) => path.toLowerCase().endsWith('.py')) ?? '')
-    setSelectedFile(Object.keys(next)[0] ?? '')
+    const updated = removeTemplateFile({ files, directories, activeFile, selectedFile }, selectedFile)
+    setFiles(updated.files)
+    setActiveFile(updated.activeFile)
+    setSelectedFile(updated.selectedFile ?? '')
     setSaveState('unsaved')
   }
 
   const deleteFolder = (path: string) => {
     if (!window.confirm(`「${path}」とその中のファイルを削除しますか？`)) return
-    const nextFiles = Object.fromEntries(Object.entries(files).filter(([file]) => !file.startsWith(`${path}/`)))
-    setFiles(nextFiles)
-    setDirectories((currentDirectories) => currentDirectories.filter((directory) => directory !== path && !directory.startsWith(`${path}/`)))
-    if (!Object.hasOwn(nextFiles, selectedFile)) setSelectedFile(Object.keys(nextFiles)[0] ?? '')
-    if (!Object.hasOwn(nextFiles, activeFile)) setActiveFile(Object.keys(nextFiles).find((file) => file.toLowerCase().endsWith('.py')) ?? '')
+    const updated = removeTemplateFolder({ files, directories, activeFile, selectedFile }, path)
+    setFiles(updated.files)
+    setDirectories(updated.directories)
+    setSelectedFile(updated.selectedFile ?? '')
+    setActiveFile(updated.activeFile)
     setSaveState('unsaved')
   }
 
   const save = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault()
-    const validationError = isValidTree(files, directories, activeFile)
+    if (busy || saveState === 'saving') return
+    const validationError = validateTemplateFileTree(files, directories, activeFile)
     if (validationError) {
       setError(validationError)
       return
@@ -233,6 +219,7 @@ export function TemplateEditorDialog({ template, busy, onSave, onClose }: Templa
             {directories.map((directory) => (
               <div className="template-editor-tree-row" key={`dir:${directory}`}>
                 <span><Folder size={14} aria-hidden="true" /> {directory}/</span>
+                <button type="button" aria-label={`${directory}の名前変更`} onClick={() => openFolderRename(directory)}><Pencil size={13} /></button>
                 <button type="button" aria-label={`${directory}を削除`} onClick={() => deleteFolder(directory)}><Trash2 size={13} /></button>
               </div>
             ))}
@@ -261,7 +248,7 @@ export function TemplateEditorDialog({ template, busy, onSave, onClose }: Templa
               <Editor
                 height="100%"
                 path={selectedFile}
-                language={selectedFile.toLowerCase().endsWith('.py') ? 'python' : selectedFile.toLowerCase().endsWith('.json') ? 'json' : 'plaintext'}
+                language={getMonacoLanguageForPath(selectedFile)}
                 value={files[selectedFile] ?? ''}
                 onChange={(value) => {
                   setFiles((currentFiles) => ({ ...currentFiles, [selectedFile]: value ?? '' }))
@@ -286,7 +273,7 @@ export function TemplateEditorDialog({ template, busy, onSave, onClose }: Templa
       {fileAction && (
         <div className="template-modal-backdrop template-editor-action-backdrop">
           <form className="project-dialog" role="dialog" aria-modal="true" onSubmit={applyAction}>
-            <h2>{fileAction === 'new-file' ? '新しいファイル' : fileAction === 'new-folder' ? '新しいフォルダー' : 'ファイル名を変更'}</h2>
+            <h2>{fileAction === 'new-file' ? '新しいファイル' : fileAction === 'new-folder' ? '新しいフォルダー' : fileAction === 'rename-folder' ? 'フォルダー名を変更' : 'ファイル名を変更'}</h2>
             <label>パス<input autoFocus value={actionPath} onChange={(event) => setActionPath(event.target.value)} placeholder="例: src/utils.py" /></label>
             {error && <p className="projects-message is-error" role="alert">{error}</p>}
             <div className="project-dialog-actions">

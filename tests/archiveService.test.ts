@@ -7,6 +7,7 @@ import {
   exportTemplateArchive,
   parsePyStudioArchive,
 } from '../src/services/archiveService'
+import type { ParsedPyStudioArchive } from '../src/types/archive'
 import type { Project } from '../src/types/project'
 import type { UserTemplate } from '../src/types/template'
 import { projectTemplates } from '../src/templates/templateCatalog'
@@ -45,6 +46,38 @@ const template: UserTemplate = {
   activeFile: 'main.py',
   createdAt: 100,
   updatedAt: 200,
+}
+
+function makeProjectZip(
+  fileContents: Record<string, string>,
+  manifestOverrides: Record<string, unknown> = {},
+  extraFiles: Record<string, string> = {},
+): Uint8Array {
+  const manifest = {
+    format: 'pystudio',
+    formatVersion: 1,
+    kind: 'project',
+    name: 'fixture',
+    description: '',
+    activeFile: 'main.py',
+    directories: [],
+    files: Object.entries(fileContents).map(([path, content]) => ({
+      path,
+      size: new TextEncoder().encode(content).byteLength,
+    })),
+    createdAt: 1,
+    updatedAt: 1,
+    ...manifestOverrides,
+  }
+  const zipEntries: Record<string, Uint8Array> = {
+    'pystudio.json': strToU8(JSON.stringify(manifest)),
+    'README.md': strToU8('# fixture'),
+  }
+  for (const [path, content] of Object.entries(fileContents)) {
+    zipEntries[`files/${path}`] = strToU8(content)
+  }
+  for (const [path, content] of Object.entries(extraFiles)) zipEntries[path] = strToU8(content)
+  return zipSync(zipEntries)
 }
 
 describe('PyStudio ZIP archives', () => {
@@ -157,6 +190,60 @@ describe('PyStudio ZIP archives', () => {
       'files/main.py': [strToU8('x'), { os: 3, attrs: 0xa1ff0000 }],
     })
     await expect(parsePyStudioArchive(toBlob(archive))).rejects.toThrow('シンボリックリンク')
+  })
+
+  it('rejects unsupported manifest versions, extra content, and manifest size mismatches', async () => {
+    const simpleFiles = { 'main.py': 'print(1)' }
+    await expect(parsePyStudioArchive(toBlob(makeProjectZip(simpleFiles, { formatVersion: 2 })))).rejects.toThrow('未対応')
+    await expect(parsePyStudioArchive(toBlob(makeProjectZip(simpleFiles, {}, { 'files/extra.txt': 'extra' })))).rejects.toThrow('manifestにない')
+    await expect(parsePyStudioArchive(toBlob(makeProjectZip(simpleFiles, {}, { 'files/unlisted/': '' })))).rejects.toThrow('manifestにないフォルダー')
+    await expect(parsePyStudioArchive(toBlob(makeProjectZip(simpleFiles, {
+      files: [{ path: 'main.py', size: 999 }],
+    })))).rejects.toThrow('manifestとZIP内')
+  })
+
+  it('rejects Unicode-normalized duplicate paths and malformed project paths', async () => {
+    await expect(parsePyStudioArchive(toBlob(makeProjectZip({
+      'main.py': 'print(1)',
+      'café.py': 'print(2)',
+      'cafe\u0301.py': 'print(3)',
+    })))).rejects.toThrow()
+    await expect(parsePyStudioArchive(toBlob(makeProjectZip({
+      'main.py': 'print(1)',
+      '../escape.py': 'print(2)',
+    })))).rejects.toThrow()
+  })
+
+  it('rejects oversized archive file counts before accepting the project', async () => {
+    const files: Record<string, string> = { 'main.py': 'print(1)' }
+    for (let index = 0; index < 99; index += 1) files[`data-${index}.txt`] = 'x'
+    await expect(parsePyStudioArchive(toBlob(makeProjectZip(files)))).rejects.toThrow('100件')
+  })
+
+  it('rejects excessive expanded total size even when the ZIP is highly compressed', async () => {
+    const largeText = 'x'.repeat(2 * 1024 * 1024)
+    const files: Record<string, string> = { 'main.py': '' }
+    for (let index = 0; index < 10; index += 1) files[`large-${index}.txt`] = largeText
+    await expect(parsePyStudioArchive(toBlob(makeProjectZip(files)))).rejects.toThrow('展開後の合計サイズ')
+  })
+
+  it('rejects malformed or excessive backup metadata before restoration', async () => {
+    const validArchive = await parsePyStudioArchive(toBlob(exportBackupArchive({
+      projects: [project],
+      templates: [template],
+      favoriteIds: ['hello-world', template.id],
+    }, 500)))
+    const malformed = JSON.parse(JSON.stringify(validArchive)) as ParsedPyStudioArchive
+    const backup = malformed.manifest.backup
+    if (!backup) throw new Error('test fixture is missing backup metadata')
+    backup.projects[0].updatedAt = 'invalid' as unknown as number
+    expect(() => backupSnapshotFromArchive(malformed)).toThrow('プロジェクト情報が不正')
+
+    const excessive = JSON.parse(JSON.stringify(validArchive)) as ParsedPyStudioArchive
+    const excessiveBackup = excessive.manifest.backup
+    if (!excessiveBackup) throw new Error('test fixture is missing backup metadata')
+    excessiveBackup.projects = Array.from({ length: 101 }, () => excessiveBackup.projects[0])
+    expect(() => backupSnapshotFromArchive(excessive)).toThrow('メタデータが不正')
   })
 
   it('rejects an oversized expanded file before allocating its content', async () => {
