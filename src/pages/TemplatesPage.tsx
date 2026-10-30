@@ -7,9 +7,11 @@ import {
   Code2,
   Copy,
   Database,
+  Download,
   Files,
   Gamepad2,
   Heart,
+  Import,
   Pencil,
   Search,
   Sparkles,
@@ -21,6 +23,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
+import { ArchiveImportDialog } from '../components/archive/ArchiveImportDialog'
+import { TemplateEditorDialog } from '../components/templates/TemplateEditorDialog'
 import {
   deleteCustomTemplate,
   listCustomTemplates,
@@ -30,6 +34,12 @@ import {
   saveTemplateFavorites,
   updateCustomTemplate,
 } from '../services/localProjectService'
+import {
+  archiveFilenameFor,
+  downloadArchive,
+  exportTemplateArchive,
+  importedTemplateFields,
+} from '../services/archiveService'
 import { projectTemplates, templateCategories } from '../templates/templateCatalog'
 import type { TemplateCategory, TemplateDifficulty, UserTemplate } from '../types/template'
 import {
@@ -76,13 +86,9 @@ export function TemplatesPage() {
   const [creationTemplate, setCreationTemplate] = useState<TemplateListItem | null>(null)
   const [editingTemplate, setEditingTemplate] = useState<UserTemplate | null>(null)
   const [deletingTemplate, setDeletingTemplate] = useState<UserTemplate | null>(null)
-  const [templateFormName, setTemplateFormName] = useState('')
-  const [templateFormDescription, setTemplateFormDescription] = useState('')
-  const [templateFormTags, setTemplateFormTags] = useState('')
-  const [templateFormCategory, setTemplateFormCategory] = useState<TemplateCategory>('Python基礎')
-  const [templateFormDifficulty, setTemplateFormDifficulty] = useState<TemplateDifficulty | ''>('')
-  const [templateFormError, setTemplateFormError] = useState('')
   const [templateBusy, setTemplateBusy] = useState(false)
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
+  const [archiveBusy, setArchiveBusy] = useState(false)
   const [selectedFile, setSelectedFile] = useState('main.py')
   const [projectName, setProjectName] = useState('')
   const [projectDescription, setProjectDescription] = useState('')
@@ -288,44 +294,68 @@ export function TemplatesPage() {
   }
 
   const openTemplateEditor = (template: UserTemplate) => {
+    restoreFocusRef.current = document.activeElement as HTMLElement | null
     setEditingTemplate(template)
-    setTemplateFormName(template.name)
-    setTemplateFormDescription(template.description)
-    setTemplateFormTags(template.tags.join(', '))
-    setTemplateFormCategory(template.category)
-    setTemplateFormDifficulty(template.difficulty ?? '')
-    setTemplateFormError('')
   }
 
-  const handleUpdateTemplate = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!editingTemplate) return
-    const name = templateFormName.trim()
-    if (!name) {
-      setTemplateFormError('テンプレート名を入力してください。')
-      return
-    }
+  const handleUpdateTemplate = async (updated: UserTemplate) => {
     setTemplateBusy(true)
     try {
-      const updated: UserTemplate = {
-        ...editingTemplate,
-        name,
-        description: templateFormDescription.trim(),
-        tags: [...new Set(templateFormTags.split(',').map((tag) => tag.trim()).filter(Boolean))],
-        category: templateFormCategory,
-        ...(templateFormDifficulty ? { difficulty: templateFormDifficulty } : { difficulty: undefined }),
-        files: { ...editingTemplate.files },
-        directories: [...editingTemplate.directories],
-        updatedAt: Date.now(),
-      }
       await updateCustomTemplate(updated)
       setCustomTemplates((templates) => templates.map((item) => item.id === updated.id ? updated : item))
-      setEditingTemplate(null)
       setNotice('マイテンプレートを更新しました。')
     } catch (error) {
-      setTemplateFormError(error instanceof Error ? error.message : '更新できませんでした。')
+      throw new Error(error instanceof Error ? error.message : '更新できませんでした。', { cause: error })
     } finally {
       setTemplateBusy(false)
+    }
+  }
+
+  const downloadTemplate = (item: TemplateListItem) => {
+    try {
+      const archive = exportTemplateArchive({
+        id: item.id,
+        name: item.name,
+        description: item.description,
+        tags: [...item.tags],
+        category: item.category,
+        difficulty: item.difficulty,
+        files: { ...item.files },
+        directories: [...item.directories],
+        activeFile: item.activeFile,
+        createdAt: item.createdAt ?? 0,
+        updatedAt: item.updatedAt ?? 0,
+      })
+      downloadArchive(archive, archiveFilenameFor(item.name))
+      setNotice(`${item.name}をZIPでダウンロードしました。`)
+    } catch (error) {
+      setFavoritesError(error instanceof Error ? error.message : 'ZIPを作成できませんでした。')
+    }
+  }
+
+  const importTemplate = async (archive: Parameters<typeof importedTemplateFields>[0], name: string) => {
+    setArchiveBusy(true)
+    try {
+      const fields = importedTemplateFields(archive)
+      const now = Date.now()
+      const template: UserTemplate = {
+        ...fields,
+        name: name.trim() || fields.name,
+        tags: [...fields.tags],
+        files: { ...fields.files },
+        directories: [...fields.directories],
+        id: `custom-${crypto.randomUUID()}`,
+        createdAt: now,
+        updatedAt: now,
+      }
+      await saveCustomTemplate(template)
+      setCustomTemplates((templates) => [...templates, template])
+      setNotice('テンプレートを新しいマイテンプレートとして保存しました。')
+      setArchiveDialogOpen(false)
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : 'テンプレートを保存できませんでした。', { cause: error })
+    } finally {
+      setArchiveBusy(false)
     }
   }
 
@@ -375,24 +405,28 @@ export function TemplatesPage() {
   }
 
   useEffect(() => {
-    if (!selectedTemplate && !creationTemplate && !editingTemplate && !deletingTemplate) return
+    if (!selectedTemplate && !creationTemplate && !editingTemplate && !deletingTemplate && !archiveDialogOpen) return
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const focusableSelector = 'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href]'
+    const activeDialog = () => [...document.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"]')].at(-1)
     const focusFirst = () => {
-      const dialog = document.querySelector<HTMLElement>('[role="dialog"], [role="alertdialog"]')
+      const dialog = activeDialog()
       dialog?.querySelector<HTMLElement>(focusableSelector)?.focus()
     }
     const timer = window.setTimeout(focusFirst, 0)
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        if (templateBusy || creating) return
+        if (templateBusy || creating || editingTemplate) return
+        if (archiveDialogOpen) {
+          setArchiveDialogOpen(false)
+          return
+        }
         setSelectedTemplate(null)
         setCreationTemplate(null)
-        setEditingTemplate(null)
         setDeletingTemplate(null)
       } else if (event.key === 'Tab') {
-        const dialog = document.querySelector<HTMLElement>('[role="dialog"], [role="alertdialog"]')
+        const dialog = activeDialog()
         const focusable = dialog ? [...dialog.querySelectorAll<HTMLElement>(focusableSelector)] : []
         if (!focusable.length) return
         const first = focusable[0]
@@ -413,7 +447,7 @@ export function TemplatesPage() {
       document.body.style.overflow = previousOverflow
       restoreFocusRef.current?.focus()
     }
-  }, [creationTemplate, creating, deletingTemplate, editingTemplate, selectedTemplate, templateBusy])
+  }, [archiveDialogOpen, creationTemplate, creating, deletingTemplate, editingTemplate, selectedTemplate, templateBusy])
 
   return (
     <section className="templates-page">
@@ -423,9 +457,17 @@ export function TemplatesPage() {
           <h1>Pythonテンプレート</h1>
           <p>目的に合ったテンプレートを選んで、Pythonプログラミングを始めましょう。</p>
         </div>
-        <Link className="templates-editor-link" to="/editor/">
-          エディターを開く <ArrowRight size={15} aria-hidden="true" />
-        </Link>
+        <div className="templates-heading-actions">
+          <button type="button" className="templates-editor-link" onClick={(event) => {
+            restoreFocusRef.current = event.currentTarget
+            setArchiveDialogOpen(true)
+          }}>
+            <Import size={15} aria-hidden="true" /> ZIPからインポート
+          </button>
+          <Link className="templates-editor-link" to="/editor/">
+            エディターを開く <ArrowRight size={15} aria-hidden="true" />
+          </Link>
+        </div>
       </header>
 
       {showRecommendations && (
@@ -635,6 +677,9 @@ export function TemplatesPage() {
                     このテンプレートを使う
                   </button>
                 </div>
+                <button type="button" className="template-archive-download" onClick={() => downloadTemplate(item)}>
+                  <Download size={14} aria-hidden="true" /> ZIPでダウンロード
+                </button>
                 {customTemplate && (
                   <div className="custom-template-actions">
                     <button type="button" onClick={() => openTemplateEditor(customTemplate)} disabled={templateBusy}>
@@ -859,44 +904,21 @@ export function TemplatesPage() {
       )}
 
       {editingTemplate && (
-        <div className="template-modal-backdrop">
-          <form
-            className="template-create-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="edit-custom-template-title"
-            onSubmit={(event) => void handleUpdateTemplate(event)}
-          >
-            <button className="template-modal-close" type="button" aria-label="閉じる" onClick={() => setEditingTemplate(null)}>
-              <X size={19} aria-hidden="true" />
-            </button>
-            <span className="section-kicker">MY TEMPLATE</span>
-            <h2 id="edit-custom-template-title">マイテンプレートを編集</h2>
-            <label>テンプレート名<input autoFocus value={templateFormName} onChange={(event) => setTemplateFormName(event.target.value)} maxLength={80} required /></label>
-            <label>説明<textarea value={templateFormDescription} onChange={(event) => setTemplateFormDescription(event.target.value)} maxLength={500} rows={3} /></label>
-            <label>タグ（カンマ区切り）<input value={templateFormTags} onChange={(event) => setTemplateFormTags(event.target.value)} placeholder="学習, 基礎" maxLength={200} /></label>
-            <label>カテゴリー
-              <select value={templateFormCategory} onChange={(event) => setTemplateFormCategory(event.target.value as TemplateCategory)}>
-                {templateCategories.map(({ name }) => <option key={name} value={name}>{name}</option>)}
-              </select>
-            </label>
-            <label>難易度
-              <select value={templateFormDifficulty} onChange={(event) => setTemplateFormDifficulty(event.target.value as TemplateDifficulty | '')}>
-                <option value="">未設定</option>
-                <option value="初級">初級</option>
-                <option value="中級">中級</option>
-                <option value="上級">上級</option>
-              </select>
-            </label>
-            {templateFormError && <p className="templates-error" role="alert">{templateFormError}</p>}
-            <div className="template-create-actions">
-              <button type="button" onClick={() => setEditingTemplate(null)} disabled={templateBusy}>キャンセル</button>
-              <button className="primary-button" type="submit" disabled={templateBusy}>
-                {templateBusy ? '保存しています…' : '変更を保存'}
-              </button>
-            </div>
-          </form>
-        </div>
+        <TemplateEditorDialog
+          template={editingTemplate}
+          busy={templateBusy}
+          onSave={handleUpdateTemplate}
+          onClose={() => setEditingTemplate(null)}
+        />
+      )}
+      {archiveDialogOpen && (
+        <ArchiveImportDialog
+          kind="template"
+          busy={archiveBusy}
+          existingNames={allTemplates.map((template) => template.name)}
+          onImport={(archive, name) => importTemplate(archive, name)}
+          onClose={() => setArchiveDialogOpen(false)}
+        />
       )}
 
       {deletingTemplate && (

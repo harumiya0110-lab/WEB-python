@@ -2,6 +2,7 @@ import { openDB } from 'idb'
 import type { DBSchema, IDBPDatabase } from 'idb'
 import type { Project } from '../types/project'
 import type { UserTemplate } from '../types/template'
+import type { BackupSnapshot } from './archiveService'
 
 interface PyStudioDatabase extends DBSchema {
   projects: {
@@ -114,5 +115,90 @@ export async function deleteCustomTemplate(id: string): Promise<void> {
     await database.delete('customTemplates', id)
   } catch (error) {
     throw new Error('マイテンプレートを削除できませんでした。', { cause: error })
+  }
+}
+
+export async function loadBackupSnapshot(): Promise<BackupSnapshot> {
+  const database = await getDatabase()
+  try {
+    const transaction = database.transaction(['projects', 'customTemplates', 'templateFavorites'], 'readonly')
+    const [projects, templates, favoriteIds] = await Promise.all([
+      transaction.objectStore('projects').getAll(),
+      transaction.objectStore('customTemplates').getAll(),
+      transaction.objectStore('templateFavorites').get('guest'),
+    ])
+    await transaction.done
+    return {
+      projects: projects.map((project) => ({ ...project, files: { ...project.files }, directories: [...project.directories], openFiles: [...project.openFiles] })),
+      templates: templates.map((template) => ({ ...template, files: { ...template.files }, directories: [...template.directories], tags: [...template.tags] })),
+      favoriteIds: [...(favoriteIds ?? [])],
+    }
+  } catch (error) {
+    throw new Error('バックアップ対象の保存データを読み込めませんでした。', { cause: error })
+  }
+}
+
+export async function restoreBackupSnapshot(snapshot: BackupSnapshot): Promise<{ projects: number; templates: number }> {
+  try {
+    const database = await getDatabase()
+    const projectIds = new Map<string, string>()
+    const templateIds = new Map<string, string>()
+    const now = Date.now()
+    const restoredProjects = snapshot.projects.map((project) => {
+      const id = crypto.randomUUID()
+      projectIds.set(project.id, id)
+      return {
+        ...project,
+        id,
+        files: { ...project.files },
+        directories: [...project.directories],
+        openFiles: [...project.openFiles],
+        createdAt: project.createdAt ?? now,
+        updatedAt: project.updatedAt || now,
+      }
+    })
+    const restoredTemplates = snapshot.templates.map((template) => {
+      const id = crypto.randomUUID()
+      templateIds.set(template.id, id)
+      return {
+        ...template,
+        id,
+        files: { ...template.files },
+        directories: [...template.directories],
+        tags: [...template.tags],
+        createdAt: template.createdAt || now,
+        updatedAt: template.updatedAt || now,
+      }
+    })
+
+    const transaction = database.transaction(['projects', 'customTemplates', 'templateFavorites'], 'readwrite')
+    const projectWrites = restoredProjects.map((project) => transaction.objectStore('projects').add(project))
+    const templateWrites = restoredTemplates.map((template) => transaction.objectStore('customTemplates').add(template))
+    const favoriteRequest = transaction.objectStore('templateFavorites').get('guest')
+    try {
+      const [currentFavorites] = await Promise.all([
+        favoriteRequest,
+        Promise.all([...projectWrites, ...templateWrites]),
+      ])
+      const restoredFavorites = snapshot.favoriteIds.map((id) => templateIds.get(id) ?? id)
+      await transaction.objectStore('templateFavorites').put(
+        [...new Set([...(currentFavorites ?? []), ...restoredFavorites])],
+        'guest',
+      )
+      await transaction.done
+    } catch (error) {
+      try {
+        transaction.abort()
+      } catch (abortError) {
+        if (!(abortError instanceof DOMException && abortError.name === 'InvalidStateError')) {
+          throw abortError
+        }
+      }
+      await transaction.done.catch(() => undefined)
+      throw error
+    }
+    return { projects: projectIds.size, templates: templateIds.size }
+  } catch (error) {
+    throw new Error('バックアップを復元できませんでした。既存の保存データは変更されていません。', { cause: error })
   }
 }

@@ -3,6 +3,8 @@ import {
   Clock3,
   Code2,
   Copy,
+  Download,
+  Import,
   FolderPlus,
   Pencil,
   Plus,
@@ -13,16 +15,28 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { ArchiveImportDialog } from '../components/archive/ArchiveImportDialog'
+import {
+  archiveFilenameFor,
+  downloadArchive,
+  exportBackupArchive,
+  exportProjectArchive,
+  importedProjectFields,
+  type BackupSnapshot,
+} from '../services/archiveService'
 import {
   deleteProject,
   listProjects,
+  loadBackupSnapshot,
   saveCustomTemplate,
   saveProject,
+  restoreBackupSnapshot,
 } from '../services/localProjectService'
 import type { Project } from '../types/project'
 import type { TemplateCategory, TemplateDifficulty } from '../types/template'
 import { templateCategories } from '../templates/templateCatalog'
 import { createUserTemplateFromProject } from '../templates/templateUtils'
+import type { ParsedPyStudioArchive, PyStudioArchiveKind } from '../types/archive'
 
 function createProject(name: string): Project {
   const now = Date.now()
@@ -68,6 +82,8 @@ export function ProjectsPage() {
   const [templateTags, setTemplateTags] = useState('')
   const [templateCategory, setTemplateCategory] = useState<TemplateCategory>('Python基礎')
   const [templateDifficulty, setTemplateDifficulty] = useState<TemplateDifficulty | ''>('')
+  const [archiveKind, setArchiveKind] = useState<PyStudioArchiveKind | null>(null)
+  const [archiveBusy, setArchiveBusy] = useState(false)
 
   const refreshProjects = useCallback(async () => {
     setLoading(true)
@@ -245,6 +261,63 @@ export function ProjectsPage() {
     }
   }
 
+  const downloadProject = (project: Project) => {
+    try {
+      downloadArchive(exportProjectArchive(project), archiveFilenameFor(project.name))
+      setNotice(`${project.name}をZIPでダウンロードしました。`)
+    } catch (archiveError) {
+      setError(archiveError instanceof Error ? archiveError.message : 'ZIPを作成できませんでした。')
+    }
+  }
+
+  const downloadBackup = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      const snapshot = await loadBackupSnapshot()
+      downloadArchive(exportBackupArchive(snapshot), `PyStudio_Backup_${new Date().toISOString().slice(0, 10)}.zip`)
+      setNotice('全プロジェクト、マイテンプレート、お気に入りのバックアップを作成しました。')
+    } catch (archiveError) {
+      setError(archiveError instanceof Error ? archiveError.message : 'バックアップを作成できませんでした。')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const importArchive = async (archive: ParsedPyStudioArchive, name: string, snapshot?: BackupSnapshot) => {
+    setArchiveBusy(true)
+    try {
+      if (archive.manifest.kind === 'project') {
+        const fields = importedProjectFields(archive)
+        const now = Date.now()
+        const project: Project = {
+          ...fields,
+          name: name.trim() || fields.name,
+          id: crypto.randomUUID(),
+          files: { ...fields.files },
+          directories: [...fields.directories],
+          openFiles: [fields.activeFile],
+          createdAt: now,
+          updatedAt: now,
+        }
+        await saveProject(project)
+        await refreshProjects()
+        setNotice('ZIPから新しいプロジェクトをインポートしました。')
+      } else if (archive.manifest.kind === 'backup' && snapshot) {
+        const result = await restoreBackupSnapshot(snapshot)
+        await refreshProjects()
+        setNotice(`復元しました（プロジェクト ${result.projects} 件、マイテンプレート ${result.templates} 件）。既存データは保持されています。`)
+      } else {
+        throw new Error('このZIPはプロジェクトまたはバックアップとして読み込めません。')
+      }
+      setArchiveKind(null)
+    } catch (archiveError) {
+      throw new Error(archiveError instanceof Error ? archiveError.message : 'ZIPの保存に失敗しました。', { cause: archiveError })
+    } finally {
+      setArchiveBusy(false)
+    }
+  }
+
   return (
     <section className="projects-page">
       <header className="projects-heading">
@@ -253,15 +326,26 @@ export function ProjectsPage() {
           <h1>プロジェクト</h1>
           <p>プロジェクトを作成し、ファイルやコードをまとめて管理できます。</p>
         </div>
-        <button
-          className="primary-button"
-          type="button"
-          onClick={() => void handleCreate()}
-          disabled={busy}
-        >
-          <Plus size={17} aria-hidden="true" />
-          新しいプロジェクト
-        </button>
+        <div className="projects-heading-actions">
+          <button type="button" className="project-secondary-action" onClick={() => setArchiveKind('project')} disabled={busy}>
+            <Import size={15} aria-hidden="true" /> ZIPからインポート
+          </button>
+          <button type="button" className="project-secondary-action" onClick={() => setArchiveKind('backup')} disabled={busy}>
+            <Download size={15} aria-hidden="true" /> バックアップを復元
+          </button>
+          <button type="button" className="project-secondary-action" onClick={() => void downloadBackup()} disabled={busy}>
+            <Download size={15} aria-hidden="true" /> バックアップ作成
+          </button>
+          <button
+            className="primary-button"
+            type="button"
+            onClick={() => void handleCreate()}
+            disabled={busy}
+          >
+            <Plus size={17} aria-hidden="true" />
+            新しいプロジェクト
+          </button>
+        </div>
       </header>
 
       <label className="project-search">
@@ -330,6 +414,9 @@ export function ProjectsPage() {
                   <Trash2 size={15} aria-hidden="true" />
                 </button>
               </div>
+              <button type="button" className="project-template-save project-archive-download" onClick={() => downloadProject(project)} disabled={busy}>
+                <Download size={14} aria-hidden="true" /> ZIPでダウンロード
+              </button>
               <button
                 type="button"
                 className="project-template-save"
@@ -481,6 +568,17 @@ export function ProjectsPage() {
             </div>
           </form>
         </div>
+      )}
+      {archiveKind && (
+        <ArchiveImportDialog
+          kind={archiveKind}
+          busy={archiveBusy}
+          existingNames={projects.map((project) => project.name)}
+          onImport={(archive, name, snapshot) => importArchive(archive, name, snapshot)}
+          onClose={() => {
+            if (!archiveBusy) setArchiveKind(null)
+          }}
+        />
       )}
     </section>
   )

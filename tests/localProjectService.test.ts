@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { deleteDB, openDB } from 'idb'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Project } from '../src/types/project'
 import type { UserTemplate } from '../src/types/template'
 
@@ -52,15 +52,52 @@ describe('IndexedDB v2 to v3 migration and custom templates', () => {
     expect(await service.loadCustomTemplate(template.id)).toEqual(template)
     expect(await service.listCustomTemplates()).toEqual([template])
 
-    const updated = { ...template, name: 'Updated template', updatedAt: 40 }
+    const updated = {
+      ...template,
+      name: 'Updated template',
+      files: { ...template.files, 'start.py': 'print("started")' },
+      activeFile: 'start.py',
+      updatedAt: 40,
+    }
     await service.updateCustomTemplate(updated)
     expect((await service.loadCustomTemplate(template.id))?.name).toBe('Updated template')
+    expect(await service.loadCustomTemplate(template.id)).toMatchObject({
+      files: updated.files,
+      activeFile: 'start.py',
+      updatedAt: 40,
+    })
     expect(await service.listProjects()).toEqual([existingProject])
 
     await service.deleteCustomTemplate(template.id)
     expect(await service.loadCustomTemplate(template.id)).toBeUndefined()
     expect(await service.listCustomTemplates()).toEqual([])
     expect(await service.listProjects()).toEqual([existingProject])
+
+    const restored = await service.restoreBackupSnapshot({
+      projects: [existingProject],
+      templates: [template],
+      favoriteIds: ['hello-world', template.id],
+    })
+    expect(restored).toEqual({ projects: 1, templates: 1 })
+    const projectsAfterRestore = await service.listProjects()
+    expect(projectsAfterRestore).toHaveLength(2)
+    expect(projectsAfterRestore.find((project) => project.id === existingProject.id)).toEqual(existingProject)
+    const restoredTemplate = (await service.listCustomTemplates())[0]
+    expect(restoredTemplate).toMatchObject({ name: template.name, files: template.files })
+    expect(restoredTemplate.id).not.toBe(template.id)
+    expect(await service.loadTemplateFavorites()).toEqual(['hello-world', restoredTemplate.id])
+
+    const uuid = vi.spyOn(crypto, 'randomUUID')
+      .mockReturnValueOnce('partial-restore')
+      .mockReturnValueOnce(existingProject.id)
+    await expect(service.restoreBackupSnapshot({
+      projects: [existingProject, { ...existingProject, id: 'second-project' }],
+      templates: [],
+      favoriteIds: [],
+    })).rejects.toThrow('バックアップを復元できませんでした')
+    uuid.mockRestore()
+    expect(await service.loadProject('partial-restore')).toBeUndefined()
+    expect(await service.listProjects()).toHaveLength(2)
 
     const database = await openDB('pystudio')
     expect(database.objectStoreNames.contains('projects')).toBe(true)
