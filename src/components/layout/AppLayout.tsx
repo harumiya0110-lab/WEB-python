@@ -1,9 +1,13 @@
 import { Outlet } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import { AppHeader } from './AppHeader'
 
 export function AppLayout() {
+  const { pathname } = useLocation()
+  const isEditor = pathname.startsWith('/editor')
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell${isEditor ? ' is-editor' : ''}`}>
       <AppHeader />
       <main className="app-main">
         <Outlet />
