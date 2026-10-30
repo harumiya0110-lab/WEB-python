@@ -9,6 +9,7 @@ interface ProjectState {
   initialize: (project: Project) => void
   updateFile: (path: string, contents: string) => void
   addFile: (path: string) => void
+  addFiles: (files: Record<string, string>) => void
   duplicateFile: (path: string) => void
   addDirectory: (path: string) => void
   deleteDirectory: (path: string) => void
@@ -64,6 +65,24 @@ export const useProjectStore = create<ProjectState>((set) => ({
         activeFile: path,
       }),
     })),
+  addFiles: (newFiles) =>
+    set((state) => {
+      const files = { ...state.project.files, ...newFiles }
+      const directories = new Set(state.project.directories)
+      for (const path of Object.keys(newFiles)) {
+        const parts = path.split('/')
+        for (let index = 1; index < parts.length; index += 1) {
+          directories.add(parts.slice(0, index).join('/'))
+        }
+      }
+      return {
+        ...setProject({
+          ...state.project,
+          files,
+          directories: [...directories].sort(),
+        }),
+      }
+    }),
   duplicateFile: (path) =>
     set((state) => {
       const contents = state.project.files[path]
