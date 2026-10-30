@@ -6,6 +6,7 @@ import type { WorkerRequest, WorkerResponse } from './protocol'
 const workerScope = self as DedicatedWorkerGlobalScope
 const pyodideVersion = '0.28.3'
 const outputLimit = 100_000
+const previewLimit = 5_000_000
 let pyodide: PyodideAPI | undefined
 let activeExecutionId: number | undefined
 let nextInputId = 0
@@ -92,6 +93,28 @@ async function runPython(
   post({ type: 'STATUS', status: 'running' })
 
   try {
+    const projectSource = Object.entries(files)
+      .filter(([path]) => path.endsWith('.py'))
+      .map(([, source]) => source)
+      .join('\n')
+    const packages = [
+      { name: 'matplotlib', pattern: /^\s*(?:import\s+matplotlib(?:\.|\s|$)|from\s+matplotlib(?:\.|\s|$))/m },
+      { name: 'pandas', pattern: /^\s*(?:import\s+pandas(?:\.|\s|$)|from\s+pandas(?:\.|\s|$))/m },
+    ]
+    for (const packageInfo of packages) {
+      if (!packageInfo.pattern.test(projectSource)) continue
+      post({
+        type: 'STATUS',
+        status: 'running',
+        message: `${packageInfo.name} を準備しています（初回は時間がかかります）…`,
+      })
+      await pyodide.loadPackage(packageInfo.name, {
+        messageCallback: (message) => {
+          post({ type: 'STATUS', status: 'running', message })
+        },
+      })
+    }
+
     const root = '/home/pyodide'
     pyodide.FS.chdir(root)
     for (const previousPath of writtenFiles) {
@@ -113,6 +136,13 @@ async function runPython(
       .map((path) => path.replace(/\.py$/, '').split('/').join('.'))
       .filter((moduleName) => !moduleName.endsWith('.__init__'))
     pyodide.globals.set('__pystudio_modules', projectModules)
+    pyodide.globals.set('__pystudio_preview', (dataUrl: string) => {
+      if (dataUrl.length > previewLimit) {
+        writeOutput('STDERR', '\n[プレビュー画像が大きすぎるため表示できません]\n')
+        return
+      }
+      post({ type: 'PREVIEW', executionId, dataUrl })
+    })
     pyodide.globals.set('__pystudio_input', (prompt: string) => {
       const requestId = ++nextInputId
       post({ type: 'INPUT_REQUEST', executionId, requestId, prompt })
@@ -127,6 +157,30 @@ for _pystudio_module in __pystudio_modules:
     _pystudio_sys.modules.pop(_pystudio_module, None)
 _pystudio_importlib.invalidate_caches()
 `)
+
+    if (/^\s*(?:import\s+matplotlib(?:\.|\s|$)|from\s+matplotlib(?:\.|\s|$))/m.test(projectSource)) {
+      await pyodide.runPythonAsync(`
+import base64 as _pystudio_base64
+import io as _pystudio_io
+import matplotlib as _pystudio_matplotlib
+_pystudio_matplotlib.use("Agg", force=True)
+import matplotlib.pyplot as _pystudio_plt
+
+def _pystudio_show(*args, **kwargs):
+    for _pystudio_figure_number in _pystudio_plt.get_fignums():
+        _pystudio_buffer = _pystudio_io.BytesIO()
+        _pystudio_plt.figure(_pystudio_figure_number).savefig(
+            _pystudio_buffer, format="png", bbox_inches="tight"
+        )
+        _pystudio_encoded = _pystudio_base64.b64encode(
+            _pystudio_buffer.getvalue()
+        ).decode("ascii")
+        __pystudio_preview("data:image/png;base64," + _pystudio_encoded)
+    _pystudio_plt.close("all")
+
+_pystudio_plt.show = _pystudio_show
+`)
+    }
 
     await pyodide.runPythonAsync(`
 import ast as _pystudio_ast

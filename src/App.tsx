@@ -4,6 +4,7 @@ import { AppLayout } from './components/layout/AppLayout'
 import { HomePage } from './pages/HomePage'
 import { EditorPage } from './pages/EditorPage'
 import { ProjectsPage } from './pages/ProjectsPage'
+import { TemplatesPage } from './pages/TemplatesPage'
 import { PlaceholderPage } from './pages/PlaceholderPage'
 import { useSettingsStore } from './store/settingsStore'
 import './App.css'
@@ -22,15 +23,7 @@ function AppRoutes() {
           <Route index element={<HomePage />} />
           <Route path="editor/:projectId?" element={<EditorPage />} />
           <Route path="projects" element={<ProjectsPage />} />
-          <Route
-            path="templates"
-            element={
-              <PlaceholderPage
-                title="テンプレート"
-                description="サンプルからすぐにPythonを始められます。"
-              />
-            }
-          />
+          <Route path="templates" element={<TemplatesPage />} />
           <Route
             path="settings"
             element={

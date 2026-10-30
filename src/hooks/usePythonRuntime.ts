@@ -12,10 +12,16 @@ interface PendingInput {
   prompt: string
 }
 
+export interface RuntimePreview {
+  id: number
+  dataUrl: string
+}
+
 export function usePythonRuntime() {
   const [status, setStatus] = useState<RuntimeStatus>('loading')
   const [statusMessage, setStatusMessage] = useState('Python環境を準備しています…')
   const [output, setOutput] = useState<OutputLine[]>([])
+  const [previews, setPreviews] = useState<RuntimePreview[]>([])
   const [pendingInput, setPendingInput] = useState<PendingInput | null>(null)
   const [durationMs, setDurationMs] = useState<number | null>(null)
   const [activeFile, setActiveFile] = useState('')
@@ -57,6 +63,12 @@ export function usePythonRuntime() {
           break
         case 'STDERR':
           appendOutput('stderr', message.text)
+          break
+        case 'PREVIEW':
+          setPreviews((current) => [...current, {
+            id: ++outputIdRef.current,
+            dataUrl: message.dataUrl,
+          }])
           break
         case 'INPUT_REQUEST':
           window.clearTimeout(timeoutRef.current)
@@ -134,6 +146,7 @@ export function usePythonRuntime() {
       setActiveFile(file)
       setDurationMs(null)
       setPendingInput(null)
+      setPreviews([])
       appendOutput('system', `${file} を実行しています…`)
       workerRef.current.postMessage({
         type: 'RUN',
@@ -184,6 +197,7 @@ export function usePythonRuntime() {
 
   const clearOutput = useCallback(() => {
     setOutput([])
+    setPreviews([])
     outputIdRef.current = 0
   }, [])
 
@@ -191,6 +205,7 @@ export function usePythonRuntime() {
     status,
     statusMessage,
     output,
+    previews,
     pendingInput,
     durationMs,
     activeFile,

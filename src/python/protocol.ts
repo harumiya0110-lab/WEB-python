@@ -14,6 +14,7 @@ export type WorkerResponse =
   | { type: 'STATUS'; status: RuntimeStatus; message?: string }
   | { type: 'STDOUT'; executionId: number; text: string }
   | { type: 'STDERR'; executionId: number; text: string }
+  | { type: 'PREVIEW'; executionId: number; dataUrl: string }
   | { type: 'INPUT_REQUEST'; executionId: number; requestId: number; prompt: string }
   | { type: 'COMPLETE'; executionId: number; durationMs: number }
   | {

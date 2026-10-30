@@ -7,15 +7,24 @@ interface PyStudioDatabase extends DBSchema {
     key: string
     value: Project
   }
+  templateFavorites: {
+    key: string
+    value: string[]
+  }
 }
 
 let databasePromise: Promise<IDBPDatabase<PyStudioDatabase>> | undefined
 
 function getDatabase(): Promise<IDBPDatabase<PyStudioDatabase>> {
   if (!databasePromise) {
-    databasePromise = openDB<PyStudioDatabase>('pystudio', 1, {
-      upgrade(database) {
-        database.createObjectStore('projects', { keyPath: 'id' })
+    databasePromise = openDB<PyStudioDatabase>('pystudio', 2, {
+      upgrade(database, oldVersion) {
+        if (oldVersion < 1) {
+          database.createObjectStore('projects', { keyPath: 'id' })
+        }
+        if (oldVersion < 2) {
+          database.createObjectStore('templateFavorites')
+        }
       },
     }).catch((error: unknown) => {
       databasePromise = undefined
@@ -43,4 +52,14 @@ export async function saveProject(project: Project): Promise<void> {
 export async function deleteProject(id: string): Promise<void> {
   const database = await getDatabase()
   await database.delete('projects', id)
+}
+
+export async function loadTemplateFavorites(): Promise<string[]> {
+  const database = await getDatabase()
+  return (await database.get('templateFavorites', 'guest')) ?? []
+}
+
+export async function saveTemplateFavorites(ids: string[]): Promise<void> {
+  const database = await getDatabase()
+  await database.put('templateFavorites', ids, 'guest')
 }

@@ -27,6 +27,7 @@ import type { editor as Monaco } from 'monaco-editor'
 import type { CSSProperties, FormEvent, ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 import { usePythonRuntime } from '../hooks/usePythonRuntime'
+import { pythonSamples } from '../data/pythonSamples'
 import { loadProject, saveProject } from '../services/localProjectService'
 import { createDefaultProject, useProjectStore } from '../store/projectStore'
 import { useSettingsStore } from '../store/settingsStore'
@@ -56,21 +57,6 @@ const fileLanguage = (path: string): string => {
   }
   return languages[extension ?? ''] ?? 'plaintext'
 }
-
-const beginnerSamples = [
-  { title: 'Hello World', category: '基本', code: 'print("Hello, world!")\n' },
-  { title: '変数', category: '基本', code: 'name = "PyStudio"\ncount = 3\nprint(f"{name}: {count}")\n' },
-  { title: '条件分岐', category: '制御構文', code: 'score = 82\nif score >= 80:\n    print("合格です")\nelse:\n    print("もう少しです")\n' },
-  { title: 'for文', category: '制御構文', code: 'for number in range(1, 6):\n    print(number)\n' },
-  { title: 'while文', category: '制御構文', code: 'count = 3\nwhile count > 0:\n    print(count)\n    count -= 1\nprint("スタート!")\n' },
-  { title: '関数', category: '基本', code: 'def greet(name):\n    return f"こんにちは、{name}さん"\n\nprint(greet("Python"))\n' },
-  { title: 'リスト', category: 'データ', code: 'fruits = ["りんご", "みかん", "ぶどう"]\nfruits.append("もも")\nfor fruit in fruits:\n    print(fruit)\n' },
-  { title: '辞書', category: 'データ', code: 'profile = {"name": "Aoi", "level": "beginner"}\nfor key, value in profile.items():\n    print(f"{key}: {value}")\n' },
-  { title: 'クラス', category: '基本', code: 'class Dog:\n    def __init__(self, name):\n        self.name = name\n\n    def speak(self):\n        print(f"{self.name}: ワン!")\n\nDog("ポチ").speak()\n' },
-  { title: 'ファイル操作', category: '応用', code: 'with open("sample.txt", "w", encoding="utf-8") as file:\n    file.write("PyStudioから保存しました")\n\nwith open("sample.txt", encoding="utf-8") as file:\n    print(file.read())\n' },
-  { title: 'グラフ作成', category: '応用', code: 'import matplotlib.pyplot as plt\n\nx = [1, 2, 3, 4, 5]\ny = [2, 4, 6, 8, 10]\nplt.plot(x, y)\nplt.title("Sample chart")\nplt.show()\n' },
-  { title: 'pandas基本操作', category: '応用', code: 'import pandas as pd\n\ndata = {"name": ["Aoi", "Ren"], "score": [85, 92]}\ndf = pd.DataFrame(data)\nprint(df)\n' },
-]
 
 function hasFilePathConflict(
   path: string,
@@ -170,6 +156,7 @@ export function EditorPage() {
     status,
     statusMessage,
     output,
+    previews,
     pendingInput,
     durationMs,
     activeFile: runtimeActiveFile,
@@ -970,6 +957,18 @@ export function EditorPage() {
                   <span className="runtime-dot" />
                   {statusMessage || 'Python実行環境'}
                 </div>
+                {previews.length > 0 && (
+                  <section className="runtime-preview-list" aria-label="実行結果のプレビュー">
+                    <h3>実行結果プレビュー</h3>
+                    {previews.map((preview, index) => (
+                      <img
+                        key={preview.id}
+                        src={preview.dataUrl}
+                        alt={`Pythonで生成したグラフ ${index + 1}`}
+                      />
+                    ))}
+                  </section>
+                )}
                 <h3>このワークスペースについて</h3>
                 <p>コードはブラウザー内のPyodideで実行されます。プロジェクトはこのブラウザーのIndexedDBに自動保存されます。</p>
                     <div className="preview-meta">
@@ -1080,7 +1079,7 @@ export function EditorPage() {
               </button>
             </header>
             <div className="sample-list">
-              {beginnerSamples.map((sample) => (
+              {pythonSamples.map((sample) => (
                 <button
                   type="button"
                   key={sample.title}
