@@ -157,6 +157,7 @@ export function EditorPage() {
     statusMessage,
     output,
     previews,
+    tablePreviews,
     pendingInput,
     durationMs,
     activeFile: runtimeActiveFile,
@@ -957,6 +958,61 @@ export function EditorPage() {
                   <span className="runtime-dot" />
                   {statusMessage || 'Python実行環境'}
                 </div>
+                {tablePreviews.length > 0 && (
+                  <section className="dataframe-preview-list" aria-label="DataFrameプレビュー">
+                    <h3>DataFrameプレビュー</h3>
+                    {tablePreviews.map((table, tableIndex) => {
+                      const cellDetails = new Map(
+                        table.cellDetails.map((detail) => [`${detail.row}:${detail.column}`, detail]),
+                      )
+                      return (
+                        <article className="dataframe-preview" key={`${table.executionId}-${table.previewId}`}>
+                          <h4>表 {tableIndex + 1}</h4>
+                          <p>
+                            全{table.totalRows}行・{table.totalColumns}列
+                            （{table.rows.length}行・{table.columns.length}列を表示）
+                            {table.truncated && '。データの一部を省略しています。'}
+                          </p>
+                          <div className="dataframe-table-scroll">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th scope="col" aria-label="行インデックス">行</th>
+                                  {table.columns.map((column, columnIndex) => (
+                                    <th scope="col" key={`column-${columnIndex}`}>{column}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {table.rows.map((row, rowIndex) => (
+                                  <tr key={`row-${rowIndex}`}>
+                                    <th scope="row">{table.index[rowIndex]}</th>
+                                    {row.map((cell, columnIndex) => {
+                                      const detail = cellDetails.get(`${rowIndex}:${columnIndex}`)
+                                      return (
+                                        <td key={`cell-${rowIndex}-${columnIndex}`} title={cell}>
+                                          {detail ? (
+                                            <details className="dataframe-cell-detail">
+                                              <summary>{cell}<span>全文を確認</span></summary>
+                                              <pre>
+                                                {detail.value}
+                                                {detail.truncated && '\n…表示上限により後半を省略しています'}
+                                              </pre>
+                                            </details>
+                                          ) : cell}
+                                        </td>
+                                      )
+                                    })}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </section>
+                )}
                 {previews.length > 0 && (
                   <section className="runtime-preview-list" aria-label="実行結果のプレビュー">
                     <h3>実行結果プレビュー</h3>

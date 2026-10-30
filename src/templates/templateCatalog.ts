@@ -509,7 +509,7 @@ export const projectTemplates: ProjectTemplate[] = [
     whatYouCanDo: 'pandasのDataFrameにデータをまとめて、列単位で集計できます。',
     learningPoints: ['pandasのimport', 'DataFrame', '列の選択とmean()'],
     runInstructions: '初回実行時はPyodideからpandasが読み込まれるため、少し時間がかかります。',
-    expectedBehavior: '表形式のデータと平均点がテキストで表示されます。',
+    expectedBehavior: '実行情報に表が表示され、平均価格がテキストで表示されます。',
     libraries: [{ name: 'pandas', support: 'Pyodideで自動読み込み', note: '初回実行時にダウンロードします。' }],
     code: getPythonSample('pandas-basics').code,
   }),

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { RuntimeStatus, WorkerRequest, WorkerResponse } from '../python/protocol'
+import type { RuntimeStatus, TablePreview, WorkerRequest, WorkerResponse } from '../python/protocol'
+import { DATAFRAME_PREVIEW_LIMITS, isTablePreview } from '../python/dataframePreview'
 
 export interface OutputLine {
   channel: 'stdout' | 'stderr' | 'system'
@@ -17,11 +18,14 @@ export interface RuntimePreview {
   dataUrl: string
 }
 
+export type RuntimeTablePreview = TablePreview
+
 export function usePythonRuntime() {
   const [status, setStatus] = useState<RuntimeStatus>('loading')
   const [statusMessage, setStatusMessage] = useState('Python環境を準備しています…')
   const [output, setOutput] = useState<OutputLine[]>([])
   const [previews, setPreviews] = useState<RuntimePreview[]>([])
+  const [tablePreviews, setTablePreviews] = useState<RuntimeTablePreview[]>([])
   const [pendingInput, setPendingInput] = useState<PendingInput | null>(null)
   const [durationMs, setDurationMs] = useState<number | null>(null)
   const [activeFile, setActiveFile] = useState('')
@@ -29,6 +33,7 @@ export function usePythonRuntime() {
   const executionRef = useRef(0)
   const activeExecutionRef = useRef<number | null>(null)
   const outputIdRef = useRef(0)
+  const tablePreviewBytesRef = useRef(0)
   const timeoutRef = useRef<number | undefined>(undefined)
   const mountRef = useRef(false)
 
@@ -70,6 +75,50 @@ export function usePythonRuntime() {
             dataUrl: message.dataUrl,
           }])
           break
+        case 'TABLE_PREVIEW': {
+          const preview = message.preview
+          if (!preview || typeof preview !== 'object') {
+            appendOutput('stderr', 'DataFrameプレビューの形式が不正なため表示できません。')
+            break
+          }
+          const previewData = {
+            columns: preview.columns,
+            index: preview.index,
+            rows: preview.rows,
+            cellDetails: preview.cellDetails,
+            totalRows: preview.totalRows,
+            totalColumns: preview.totalColumns,
+            truncated: preview.truncated,
+          }
+          if (
+            preview.executionId !== message.executionId ||
+            !Number.isSafeInteger(preview.previewId) ||
+            preview.previewId < 1 ||
+            preview.previewId > DATAFRAME_PREVIEW_LIMITS.previews ||
+            !isTablePreview(previewData)
+          ) {
+            appendOutput('stderr', 'DataFrameプレビューの形式またはサイズが不正なため表示できません。')
+            break
+          }
+          const previewBytes = new TextEncoder().encode(JSON.stringify({
+            ...previewData,
+            executionId: preview.executionId,
+            previewId: preview.previewId,
+          })).byteLength
+          if (
+            previewBytes > DATAFRAME_PREVIEW_LIMITS.bytes ||
+            tablePreviewBytesRef.current + previewBytes > DATAFRAME_PREVIEW_LIMITS.bytes
+          ) {
+            appendOutput('stderr', 'DataFrameプレビューの形式またはサイズが不正なため表示できません。')
+            break
+          }
+          tablePreviewBytesRef.current += previewBytes
+          setTablePreviews((current) => {
+            if (current.length >= DATAFRAME_PREVIEW_LIMITS.previews) return current
+            return [...current, preview]
+          })
+          break
+        }
         case 'INPUT_REQUEST':
           window.clearTimeout(timeoutRef.current)
           setPendingInput({ requestId: message.requestId, prompt: message.prompt })
@@ -147,6 +196,8 @@ export function usePythonRuntime() {
       setDurationMs(null)
       setPendingInput(null)
       setPreviews([])
+      setTablePreviews([])
+      tablePreviewBytesRef.current = 0
       appendOutput('system', `${file} を実行しています…`)
       workerRef.current.postMessage({
         type: 'RUN',
@@ -198,6 +249,8 @@ export function usePythonRuntime() {
   const clearOutput = useCallback(() => {
     setOutput([])
     setPreviews([])
+    setTablePreviews([])
+    tablePreviewBytesRef.current = 0
     outputIdRef.current = 0
   }, [])
 
@@ -206,6 +259,7 @@ export function usePythonRuntime() {
     statusMessage,
     output,
     previews,
+    tablePreviews,
     pendingInput,
     durationMs,
     activeFile,

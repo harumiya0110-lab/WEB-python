@@ -3482,6 +3482,104 @@
   background: white;
 }
 
+.dataframe-preview-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.dataframe-preview-list > h3,
+.dataframe-preview h4 {
+  margin: 0;
+  font-size: 12px;
+}
+
+.dataframe-preview {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dataframe-preview > p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.dataframe-table-scroll {
+  max-width: 100%;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  overscroll-behavior: contain;
+}
+
+.dataframe-table-scroll table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 11px;
+}
+
+.dataframe-table-scroll th,
+.dataframe-table-scroll td {
+  max-width: 180px;
+  padding: 6px 8px;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  overflow-wrap: anywhere;
+  text-align: left;
+  vertical-align: top;
+}
+
+.dataframe-table-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-surface-subtle);
+  font-weight: 650;
+}
+
+.dataframe-table-scroll tbody th {
+  background: var(--color-surface-subtle);
+  font-weight: 550;
+}
+
+.dataframe-table-scroll tr > :last-child {
+  border-right: 0;
+}
+
+.dataframe-table-scroll tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.dataframe-cell-detail summary {
+  cursor: pointer;
+}
+
+.dataframe-cell-detail summary span {
+  display: block;
+  margin-top: 3px;
+  color: var(--color-accent);
+  font-size: 9px;
+}
+
+.dataframe-cell-detail pre {
+  max-width: 260px;
+  max-height: 160px;
+  margin: 6px 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+
 @media (max-width: 700px) {
   .projects-heading {
     align-items: flex-start;

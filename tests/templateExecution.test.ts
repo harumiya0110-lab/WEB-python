@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { loadPyodide } from 'pyodide'
 import { projectTemplates } from '../src/templates/templateCatalog'
+import { PYTHON_DATAFRAME_PREVIEW_SETUP } from '../src/python/dataframePreview'
 
 describe('template execution on Pyodide', () => {
   it('executes all 36 templates with their complete project files', async () => {
@@ -30,12 +31,18 @@ plt.show = lambda *args, **kwargs: None
       'csv-analysis': '平均点: 85.0点',
       'csv-writing': 'name, score',
       'csv-summary-report': '数学: 2人',
-      'pandas-basics': 'Aoi',
+      'pandas-basics': '平均価格:',
     }
 
+    const tablePreviews: string[] = []
+    pyodide.globals.set('__pystudio_table_preview', (json: string) => {
+      tablePreviews.push(json)
+    })
     let previousFiles: string[] = []
     for (const template of projectTemplates) {
       output = ''
+      const previousPreviewCount = tablePreviews.length
+      pyodide.runPython(`${PYTHON_DATAFRAME_PREVIEW_SETUP}\ndisplay = _pystudio_display`)
       for (const path of previousFiles) {
         pyodide.FS.unlink(`/home/pyodide/${path}`)
       }
@@ -57,6 +64,10 @@ plt.show = lambda *args, **kwargs: None
         expect(output.trim(), template.id).not.toBe('')
         const expected = expectedOutput[template.id]
         if (expected) expect(output, template.id).toContain(expected)
+      }
+      if (template.id === 'pandas-basics') {
+        expect(tablePreviews.length).toBeGreaterThan(previousPreviewCount)
+        expect(JSON.parse(tablePreviews.at(-1) ?? 'null').columns).toContain('商品')
       }
       pyodide.runPython(`
 for _module in ${JSON.stringify(fileList.filter((path) => path.endsWith('.py')).map((path) => path.replace(/\.py$/, '').replaceAll('/', '.')))}:

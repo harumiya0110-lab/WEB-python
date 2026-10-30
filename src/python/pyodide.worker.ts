@@ -1,6 +1,12 @@
 /// <reference lib="webworker" />
 
 import type { PyodideAPI } from 'pyodide'
+import {
+  DATAFRAME_PREVIEW_LIMITS,
+  fitTablePreviewToByteLimit,
+  isTablePreview,
+  PYTHON_DATAFRAME_PREVIEW_SETUP,
+} from './dataframePreview'
 import type { WorkerRequest, WorkerResponse } from './protocol'
 
 const workerScope = self as DedicatedWorkerGlobalScope
@@ -13,6 +19,8 @@ let nextInputId = 0
 let writtenFiles = new Set<string>()
 let outputCharacters = 0
 let outputLimitReached = false
+let tablePreviewBytes = 0
+let tablePreviewCount = 0
 const inputResolvers = new Map<number, (value: string) => void>()
 
 function containsControlCharacter(value: string): boolean {
@@ -89,6 +97,8 @@ async function runPython(
   activeExecutionId = executionId
   outputCharacters = 0
   outputLimitReached = false
+  tablePreviewBytes = 0
+  tablePreviewCount = 0
   const startedAt = performance.now()
   post({ type: 'STATUS', status: 'running' })
 
@@ -143,6 +153,41 @@ async function runPython(
       }
       post({ type: 'PREVIEW', executionId, dataUrl })
     })
+    pyodide.globals.set('__pystudio_table_preview', (json: string) => {
+      if (tablePreviewCount >= DATAFRAME_PREVIEW_LIMITS.previews) {
+        writeOutput('STDERR', '\n[DataFrameプレビューは1回の実行につき5件までです]\n')
+        return false
+      }
+      let payload: unknown
+      try {
+        payload = JSON.parse(json)
+      } catch {
+        writeOutput('STDERR', '\n[DataFrameプレビューを読み込めませんでした]\n')
+        return false
+      }
+      if (!isTablePreview(payload)) {
+        writeOutput('STDERR', '\n[DataFrameプレビューの形式が不正です]\n')
+        return false
+      }
+      const fittedPreview = fitTablePreviewToByteLimit(
+        payload,
+        executionId,
+        tablePreviewCount + 1,
+        DATAFRAME_PREVIEW_LIMITS.bytes - tablePreviewBytes,
+      )
+      if (!fittedPreview) {
+        writeOutput('STDERR', '\n[DataFrameプレビューの残り容量が不足しているため、表示できません]\n')
+        return false
+      }
+      tablePreviewBytes += fittedPreview.byteLength
+      tablePreviewCount += 1
+      post({
+        type: 'TABLE_PREVIEW',
+        executionId,
+        preview: fittedPreview.preview,
+      })
+      return true
+    })
     pyodide.globals.set('__pystudio_input', (prompt: string) => {
       const requestId = ++nextInputId
       post({ type: 'INPUT_REQUEST', executionId, requestId, prompt })
@@ -181,6 +226,8 @@ def _pystudio_show(*args, **kwargs):
 _pystudio_plt.show = _pystudio_show
 `)
     }
+
+    await pyodide.runPythonAsync(PYTHON_DATAFRAME_PREVIEW_SETUP)
 
     await pyodide.runPythonAsync(`
 import ast as _pystudio_ast
@@ -222,6 +269,7 @@ _pystudio_namespace = {
     "__file__": __pystudio_filename,
     "__builtins__": __builtins__,
     "__pystudio_input": __pystudio_input,
+    "display": _pystudio_display,
 }
 _pystudio_result = eval(
     _pystudio_code,
