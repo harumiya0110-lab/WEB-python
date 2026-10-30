@@ -1,13 +1,13 @@
 import type { ProjectTemplate, TemplateCategory } from '../types/template'
 import { getPythonSample } from '../data/pythonSamples'
 
-const catalogDate = Date.now()
-let nextCatalogDate = catalogDate
+let nextCatalogOrder = 0
 
 function template(
   definition: Omit<
     ProjectTemplate,
     | 'createdAt'
+    | 'sortOrder'
     | 'files'
     | 'title'
     | 'tags'
@@ -44,7 +44,7 @@ function template(
       ...metadata.libraries.map(({ name }) => name),
     ])],
     featured: metadata.recommended,
-    createdAt: nextCatalogDate++,
+    sortOrder: nextCatalogOrder++,
     files,
     directories: [...new Set([...directories, ...fileDirectories])].sort(),
     activeFile: files['main.py'] ? 'main.py' : Object.keys(files).find((path) => path.endsWith('.py')) ?? Object.keys(files)[0] ?? '',

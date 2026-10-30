@@ -1,4 +1,5 @@
 import {
+  Bookmark,
   Clock3,
   Code2,
   Copy,
@@ -12,8 +13,16 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { deleteProject, listProjects, saveProject } from '../services/localProjectService'
+import {
+  deleteProject,
+  listProjects,
+  saveCustomTemplate,
+  saveProject,
+} from '../services/localProjectService'
 import type { Project } from '../types/project'
+import type { TemplateCategory, TemplateDifficulty } from '../types/template'
+import { templateCategories } from '../templates/templateCatalog'
+import { createUserTemplateFromProject } from '../templates/templateUtils'
 
 function createProject(name: string): Project {
   const now = Date.now()
@@ -53,6 +62,12 @@ export function ProjectsPage() {
   const [projectName, setProjectName] = useState('')
   const [projectDescription, setProjectDescription] = useState('')
   const [dialogError, setDialogError] = useState('')
+  const [templateProject, setTemplateProject] = useState<Project | null>(null)
+  const [templateName, setTemplateName] = useState('')
+  const [templateDescription, setTemplateDescription] = useState('')
+  const [templateTags, setTemplateTags] = useState('')
+  const [templateCategory, setTemplateCategory] = useState<TemplateCategory>('Python基礎')
+  const [templateDifficulty, setTemplateDifficulty] = useState<TemplateDifficulty | ''>('')
 
   const refreshProjects = useCallback(async () => {
     setLoading(true)
@@ -190,6 +205,46 @@ export function ProjectsPage() {
     }
   }
 
+  const openSaveTemplate = (project: Project) => {
+    setTemplateProject(project)
+    setTemplateName(project.name)
+    setTemplateDescription(project.description ?? '')
+    setTemplateTags('')
+    setTemplateCategory('Python基礎')
+    setTemplateDifficulty('')
+    setDialogError('')
+  }
+
+  const handleSaveTemplate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!templateProject) return
+    const name = templateName.trim()
+    if (!name) {
+      setDialogError('テンプレート名を入力してください。')
+      return
+    }
+    setBusy(true)
+    setDialogError('')
+    try {
+      const template = createUserTemplateFromProject(templateProject, {
+        name,
+        description: templateDescription,
+        tags: templateTags.split(','),
+        category: templateCategory,
+        ...(templateDifficulty ? { difficulty: templateDifficulty } : {}),
+      })
+      await saveCustomTemplate(template)
+      setTemplateProject(null)
+      setNotice('マイテンプレートとして保存しました。')
+    } catch (saveError) {
+      setDialogError(
+        saveError instanceof Error ? saveError.message : 'テンプレートを保存できませんでした。',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <section className="projects-page">
       <header className="projects-heading">
@@ -275,6 +330,14 @@ export function ProjectsPage() {
                   <Trash2 size={15} aria-hidden="true" />
                 </button>
               </div>
+              <button
+                type="button"
+                className="project-template-save"
+                onClick={() => openSaveTemplate(project)}
+                disabled={busy}
+              >
+                <Bookmark size={14} aria-hidden="true" /> テンプレートとして保存
+              </button>
             </article>
           ))}
         </div>
@@ -362,6 +425,61 @@ export function ProjectsPage() {
               </button>
             </div>
           </section>
+        </div>
+      )}
+      {templateProject && (
+        <div className="project-dialog-backdrop">
+          <form
+            className="project-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="save-template-title"
+            onSubmit={(event) => void handleSaveTemplate(event)}
+          >
+            <button
+              className="project-dialog-close"
+              type="button"
+              aria-label="閉じる"
+              onClick={() => setTemplateProject(null)}
+              disabled={busy}
+            >
+              <X size={18} aria-hidden="true" />
+            </button>
+            <h2 id="save-template-title">テンプレートとして保存</h2>
+            <p>プロジェクトのファイルとコードをコピーして、再利用できるマイテンプレートを作成します。元のプロジェクトは変更されません。</p>
+            <label>
+              テンプレート名
+              <input autoFocus value={templateName} onChange={(event) => setTemplateName(event.target.value)} maxLength={80} required />
+            </label>
+            <label>
+              説明
+              <textarea value={templateDescription} onChange={(event) => setTemplateDescription(event.target.value)} maxLength={500} rows={3} />
+            </label>
+            <label>
+              タグ（カンマ区切り）
+              <input value={templateTags} onChange={(event) => setTemplateTags(event.target.value)} placeholder="学習, 基礎" maxLength={200} />
+            </label>
+            <label>
+              カテゴリー
+              <select value={templateCategory} onChange={(event) => setTemplateCategory(event.target.value as TemplateCategory)}>
+                {templateCategories.map(({ name }) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </label>
+            <label>
+              難易度（任意）
+              <select value={templateDifficulty} onChange={(event) => setTemplateDifficulty(event.target.value as TemplateDifficulty | '')}>
+                <option value="">未設定</option>
+                <option value="初級">初級</option>
+                <option value="中級">中級</option>
+                <option value="上級">上級</option>
+              </select>
+            </label>
+            {dialogError && <p className="projects-message is-error" role="alert">{dialogError}</p>}
+            <div className="project-dialog-actions">
+              <button type="button" onClick={() => setTemplateProject(null)} disabled={busy}>キャンセル</button>
+              <button type="submit" className="primary-button" disabled={busy}>{busy ? '保存しています…' : 'テンプレートを保存'}</button>
+            </div>
+          </form>
         </div>
       )}
     </section>

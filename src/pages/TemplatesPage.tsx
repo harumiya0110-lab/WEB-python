@@ -10,30 +10,38 @@ import {
   Files,
   Gamepad2,
   Heart,
+  Pencil,
   Search,
   Sparkles,
+  Trash2,
   Wrench,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
+  deleteCustomTemplate,
+  listCustomTemplates,
   loadTemplateFavorites,
+  saveCustomTemplate,
   saveProject,
   saveTemplateFavorites,
+  updateCustomTemplate,
 } from '../services/localProjectService'
 import { projectTemplates, templateCategories } from '../templates/templateCatalog'
-import type {
-  ProjectTemplate,
-  TemplateCategory,
-  TemplateDifficulty,
-} from '../types/template'
+import type { TemplateCategory, TemplateDifficulty, UserTemplate } from '../types/template'
+import {
+  createProjectFromTemplate,
+  toTemplateListItem,
+  type TemplateListItem,
+} from '../templates/templateUtils'
 
-type SortMode = 'recommended' | 'beginner' | 'name' | 'newest'
+type SortMode = 'recommended' | 'beginner' | 'name' | 'created' | 'updated'
 type TemplateCategoryFilter = 'すべて' | TemplateCategory
 type DifficultyFilter = 'すべて' | TemplateDifficulty
+type SourceFilter = 'all' | 'builtin' | 'custom' | 'favorites'
 
 const categoryIcons: Record<TemplateCategory, LucideIcon> = {
   Python基礎: Code2,
@@ -52,65 +60,70 @@ const difficultyOrder: Record<TemplateDifficulty, number> = {
   上級: 2,
 }
 
-function createProjectFromTemplate(
-  template: ProjectTemplate,
-  name: string,
-  description: string,
-) {
-  const now = Date.now()
-  const paths = Object.keys(template.files)
-  const activeFile =
-    template.activeFile ||
-    paths.find((path) => path.endsWith('.py')) ||
-    paths[0] ||
-    ''
-  return {
-    id: crypto.randomUUID(),
-    name,
-    description,
-    files: { ...template.files },
-    directories: [...template.directories],
-    openFiles: activeFile ? [activeFile] : [],
-    activeFile,
-    createdAt: now,
-    updatedAt: now,
-  }
-}
-
 export function TemplatesPage() {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<TemplateCategoryFilter>('すべて')
   const [difficulty, setDifficulty] = useState<DifficultyFilter>('すべて')
   const [sortMode, setSortMode] = useState<SortMode>('recommended')
-  const [favoritesOnly, setFavoritesOnly] = useState(false)
   const [favorites, setFavorites] = useState<string[]>([])
+  const [customTemplates, setCustomTemplates] = useState<UserTemplate[]>([])
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
   const [favoritesLoading, setFavoritesLoading] = useState(true)
   const [favoritesBusy, setFavoritesBusy] = useState(false)
   const [favoritesError, setFavoritesError] = useState('')
-  const [selectedTemplate, setSelectedTemplate] = useState<ProjectTemplate | null>(null)
-  const [creationTemplate, setCreationTemplate] = useState<ProjectTemplate | null>(null)
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateListItem | null>(null)
+  const [creationTemplate, setCreationTemplate] = useState<TemplateListItem | null>(null)
+  const [editingTemplate, setEditingTemplate] = useState<UserTemplate | null>(null)
+  const [deletingTemplate, setDeletingTemplate] = useState<UserTemplate | null>(null)
+  const [templateFormName, setTemplateFormName] = useState('')
+  const [templateFormDescription, setTemplateFormDescription] = useState('')
+  const [templateFormTags, setTemplateFormTags] = useState('')
+  const [templateFormCategory, setTemplateFormCategory] = useState<TemplateCategory>('Python基礎')
+  const [templateFormDifficulty, setTemplateFormDifficulty] = useState<TemplateDifficulty | ''>('')
+  const [templateFormError, setTemplateFormError] = useState('')
+  const [templateBusy, setTemplateBusy] = useState(false)
   const [selectedFile, setSelectedFile] = useState('main.py')
   const [projectName, setProjectName] = useState('')
   const [projectDescription, setProjectDescription] = useState('')
   const [creating, setCreating] = useState(false)
   const [creationError, setCreationError] = useState('')
   const [notice, setNotice] = useState('')
+  const restoreFocusRef = useRef<HTMLElement | null>(null)
   const showRecommendations =
     !query.trim() &&
     category === 'すべて' &&
     difficulty === 'すべて' &&
-    !favoritesOnly &&
+    sourceFilter === 'all' &&
     sortMode === 'recommended'
 
-  const refreshFavorites = useCallback(async () => {
+  const refreshTemplateData = useCallback(async () => {
     setFavoritesLoading(true)
     try {
-      setFavorites(await loadTemplateFavorites())
+      const [storedFavorites, storedTemplates] = await Promise.all([
+        loadTemplateFavorites(),
+        listCustomTemplates(),
+      ])
+      const validIds = new Set([
+        ...projectTemplates.map(({ id }) => id),
+        ...storedTemplates.map(({ id }) => id),
+      ])
+      const validFavorites = storedFavorites.filter((id) => validIds.has(id))
+      setCustomTemplates(storedTemplates)
+      setFavorites(validFavorites)
       setFavoritesError('')
+      if (validFavorites.length !== storedFavorites.length) {
+        try {
+          await saveTemplateFavorites(validFavorites)
+        } catch (error) {
+          setFavoritesError(
+            error instanceof Error ? error.message : '無効なお気に入りを整理できませんでした。',
+          )
+        }
+      }
     } catch (error) {
       setFavoritesError(
-        error instanceof Error ? error.message : 'お気に入りを読み込めませんでした。',
+        error instanceof Error ? error.message : 'テンプレート情報を読み込めませんでした。',
       )
     } finally {
       setFavoritesLoading(false)
@@ -118,9 +131,11 @@ export function TemplatesPage() {
   }, [])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void refreshFavorites(), 0)
+    const timer = window.setTimeout(() => {
+      void refreshTemplateData()
+    }, 0)
     return () => window.clearTimeout(timer)
-  }, [refreshFavorites])
+  }, [refreshTemplateData])
 
   useEffect(() => {
     if (!notice) return
@@ -148,14 +163,27 @@ export function TemplatesPage() {
     }
   }
 
+  const allTemplates = useMemo(
+    () => [
+      ...projectTemplates.map(toTemplateListItem),
+      ...customTemplates.map(toTemplateListItem),
+    ],
+    [customTemplates],
+  )
+
+  const validFavoriteIds = useMemo(() => {
+    const knownIds = new Set(allTemplates.map(({ id }) => id))
+    return favorites.filter((id) => knownIds.has(id))
+  }, [allTemplates, favorites])
+
   const filteredTemplates = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase('ja')
-    const filtered = projectTemplates.filter((item) => {
+    const filtered = allTemplates.filter((item) => {
       const searchableText = [
         item.name,
         item.description,
         item.category,
-        item.difficulty,
+        item.difficulty ?? '',
         item.difficulty === '初級' ? '初心者 beginner' : '',
         ...item.learningPoints,
         ...item.tags,
@@ -167,7 +195,8 @@ export function TemplatesPage() {
         (!normalizedQuery || searchableText.includes(normalizedQuery)) &&
         (category === 'すべて' || item.category === category) &&
         (difficulty === 'すべて' || item.difficulty === difficulty) &&
-        (!favoritesOnly || favorites.includes(item.id))
+        (sourceFilter === 'all' || sourceFilter === 'favorites' || (sourceFilter === 'custom') === item.isCustom) &&
+        (sourceFilter !== 'favorites' || validFavoriteIds.includes(item.id))
       )
     })
 
@@ -176,29 +205,40 @@ export function TemplatesPage() {
       : filtered
     return visible.sort((left, right) => {
       if (sortMode === 'name') return left.name.localeCompare(right.name, 'ja')
-      if (sortMode === 'newest') return right.createdAt - left.createdAt
+      if (sortMode === 'created' || sortMode === 'updated') {
+        if (left.isCustom !== right.isCustom) return left.isCustom ? -1 : 1
+        if (left.isCustom) {
+          const leftTime = sortMode === 'created' ? left.createdAt ?? 0 : left.updatedAt ?? 0
+          const rightTime = sortMode === 'created' ? right.createdAt ?? 0 : right.updatedAt ?? 0
+          return rightTime - leftTime || left.name.localeCompare(right.name, 'ja')
+        }
+        return right.sortOrder - left.sortOrder
+      }
       if (sortMode === 'beginner') {
-        return difficultyOrder[left.difficulty] - difficultyOrder[right.difficulty] ||
+        return (left.difficulty ? difficultyOrder[left.difficulty] : 3) -
+          (right.difficulty ? difficultyOrder[right.difficulty] : 3) ||
           left.name.localeCompare(right.name, 'ja')
       }
       return Number(right.recommended) - Number(left.recommended) ||
-        difficultyOrder[left.difficulty] - difficultyOrder[right.difficulty] ||
+        (left.difficulty ? difficultyOrder[left.difficulty] : 3) -
+          (right.difficulty ? difficultyOrder[right.difficulty] : 3) ||
         left.name.localeCompare(right.name, 'ja')
     })
-  }, [category, difficulty, favorites, favoritesOnly, query, showRecommendations, sortMode])
+  }, [allTemplates, category, difficulty, query, showRecommendations, sortMode, sourceFilter, validFavoriteIds])
 
   const recommendedTemplates = useMemo(
     () => projectTemplates.filter((item) => item.featured).slice(0, 5),
     [],
   )
 
-  const openPreview = (item: ProjectTemplate) => {
+  const openPreview = (item: TemplateListItem, trigger?: HTMLElement) => {
+    restoreFocusRef.current = trigger ?? (document.activeElement as HTMLElement | null)
     setSelectedTemplate(item)
     setSelectedFile(Object.keys(item.files)[0] ?? '')
     setNotice(`${item.name}を選択しました。`)
   }
 
-  const openCreation = (item: ProjectTemplate) => {
+  const openCreation = (item: TemplateListItem) => {
     setCreationTemplate(item)
     setProjectName(item.name)
     setProjectDescription(item.description)
@@ -216,11 +256,7 @@ export function TemplatesPage() {
     setCreating(true)
     setCreationError('')
     try {
-      const project = createProjectFromTemplate(
-        creationTemplate,
-        name,
-        projectDescription.trim(),
-      )
+      const project = createProjectFromTemplate(creationTemplate, name, projectDescription.trim())
       await saveProject(project)
       setNotice('プロジェクトを作成しました。エディターを開きます。')
       navigate(`/editor/${project.id}`)
@@ -234,7 +270,7 @@ export function TemplatesPage() {
     }
   }
 
-  const copyTemplateCode = async (item: ProjectTemplate, path: string) => {
+  const copyTemplateCode = async (item: TemplateListItem, path: string) => {
     try {
       await navigator.clipboard.writeText(item.files[path] ?? '')
       setNotice(`${path} のコードをコピーしました。`)
@@ -247,9 +283,137 @@ export function TemplatesPage() {
     setQuery('')
     setCategory('すべて')
     setDifficulty('すべて')
-    setFavoritesOnly(false)
+    setSourceFilter('all')
     setSortMode('recommended')
   }
+
+  const openTemplateEditor = (template: UserTemplate) => {
+    setEditingTemplate(template)
+    setTemplateFormName(template.name)
+    setTemplateFormDescription(template.description)
+    setTemplateFormTags(template.tags.join(', '))
+    setTemplateFormCategory(template.category)
+    setTemplateFormDifficulty(template.difficulty ?? '')
+    setTemplateFormError('')
+  }
+
+  const handleUpdateTemplate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!editingTemplate) return
+    const name = templateFormName.trim()
+    if (!name) {
+      setTemplateFormError('テンプレート名を入力してください。')
+      return
+    }
+    setTemplateBusy(true)
+    try {
+      const updated: UserTemplate = {
+        ...editingTemplate,
+        name,
+        description: templateFormDescription.trim(),
+        tags: [...new Set(templateFormTags.split(',').map((tag) => tag.trim()).filter(Boolean))],
+        category: templateFormCategory,
+        ...(templateFormDifficulty ? { difficulty: templateFormDifficulty } : { difficulty: undefined }),
+        files: { ...editingTemplate.files },
+        directories: [...editingTemplate.directories],
+        updatedAt: Date.now(),
+      }
+      await updateCustomTemplate(updated)
+      setCustomTemplates((templates) => templates.map((item) => item.id === updated.id ? updated : item))
+      setEditingTemplate(null)
+      setNotice('マイテンプレートを更新しました。')
+    } catch (error) {
+      setTemplateFormError(error instanceof Error ? error.message : '更新できませんでした。')
+    } finally {
+      setTemplateBusy(false)
+    }
+  }
+
+  const duplicateTemplate = async (template: UserTemplate) => {
+    setTemplateBusy(true)
+    try {
+      const now = Date.now()
+      const duplicate: UserTemplate = {
+        ...template,
+        id: `custom-${crypto.randomUUID()}`,
+        name: `${template.name} (コピー)`,
+        tags: [...template.tags],
+        files: { ...template.files },
+        directories: [...template.directories],
+        createdAt: now,
+        updatedAt: now,
+      }
+      await saveCustomTemplate(duplicate)
+      setCustomTemplates((templates) => [...templates, duplicate])
+      setNotice('マイテンプレートを複製しました。')
+    } catch (error) {
+      setFavoritesError(error instanceof Error ? error.message : '複製できませんでした。')
+    } finally {
+      setTemplateBusy(false)
+    }
+  }
+
+  const confirmDeleteTemplate = async () => {
+    if (!deletingTemplate) return
+    setTemplateBusy(true)
+    try {
+      await deleteCustomTemplate(deletingTemplate.id)
+      setCustomTemplates((templates) => templates.filter((item) => item.id !== deletingTemplate.id))
+      setFavorites((current) => current.filter((id) => id !== deletingTemplate.id))
+      try {
+        await saveTemplateFavorites(favorites.filter((id) => id !== deletingTemplate.id))
+      } catch {
+        setFavoritesError('テンプレートは削除されましたが、お気に入りの更新に失敗しました。')
+      }
+      setDeletingTemplate(null)
+      setNotice('マイテンプレートを削除しました。作成済みプロジェクトはそのまま残ります。')
+    } catch (error) {
+      setFavoritesError(error instanceof Error ? error.message : '削除できませんでした。')
+    } finally {
+      setTemplateBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!selectedTemplate && !creationTemplate && !editingTemplate && !deletingTemplate) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const focusableSelector = 'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href]'
+    const focusFirst = () => {
+      const dialog = document.querySelector<HTMLElement>('[role="dialog"], [role="alertdialog"]')
+      dialog?.querySelector<HTMLElement>(focusableSelector)?.focus()
+    }
+    const timer = window.setTimeout(focusFirst, 0)
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (templateBusy || creating) return
+        setSelectedTemplate(null)
+        setCreationTemplate(null)
+        setEditingTemplate(null)
+        setDeletingTemplate(null)
+      } else if (event.key === 'Tab') {
+        const dialog = document.querySelector<HTMLElement>('[role="dialog"], [role="alertdialog"]')
+        const focusable = dialog ? [...dialog.querySelectorAll<HTMLElement>(focusableSelector)] : []
+        if (!focusable.length) return
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last.focus()
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault()
+          first.focus()
+        }
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('keydown', onKeyDown)
+      document.body.style.overflow = previousOverflow
+      restoreFocusRef.current?.focus()
+    }
+  }, [creationTemplate, creating, deletingTemplate, editingTemplate, selectedTemplate, templateBusy])
 
   return (
     <section className="templates-page">
@@ -281,7 +445,7 @@ export function TemplatesPage() {
                 type="button"
                 className="recommended-template"
                 key={item.id}
-                onClick={() => openPreview(item)}
+                onClick={(event) => openPreview(toTemplateListItem(item), event.currentTarget)}
               >
                 <span className="template-icon"><Icon size={17} aria-hidden="true" /></span>
                 <span>{item.name}</span>
@@ -292,6 +456,25 @@ export function TemplatesPage() {
         </div>
       </section>
       )}
+
+      <nav className="template-source-tabs" aria-label="テンプレートの種類">
+        {([
+          ['all', 'すべて', allTemplates.length],
+          ['builtin', '標準テンプレート', projectTemplates.length],
+          ['custom', 'マイテンプレート', customTemplates.length],
+          ['favorites', 'お気に入り', validFavoriteIds.length],
+        ] as const).map(([value, label, count]) => (
+          <button
+            type="button"
+            key={value}
+            className={sourceFilter === value ? 'is-active' : ''}
+            aria-pressed={sourceFilter === value}
+            onClick={() => setSourceFilter(value)}
+          >
+            {label}<span>{count}</span>
+          </button>
+        ))}
+      </nav>
 
       <div className="template-browser-toolbar">
         <label className="template-search">
@@ -332,18 +515,19 @@ export function TemplatesPage() {
             <option value="recommended">おすすめ順</option>
             <option value="beginner">初心者向け</option>
             <option value="name">名前順</option>
-            <option value="newest">新着順</option>
+            <option value="created">新着順（標準は固定順）</option>
+            <option value="updated">更新順（標準は固定順）</option>
           </select>
         </label>
         <button
           type="button"
-          className={`template-favorites-filter${favoritesOnly ? ' is-active' : ''}`}
-          onClick={() => setFavoritesOnly((current) => !current)}
-          aria-pressed={favoritesOnly}
+          className={`template-favorites-filter${sourceFilter === 'favorites' ? ' is-active' : ''}`}
+          onClick={() => setSourceFilter((current) => current === 'favorites' ? 'all' : 'favorites')}
+          aria-pressed={sourceFilter === 'favorites'}
           disabled={favoritesLoading}
         >
-          <Heart size={15} fill={favoritesOnly ? 'currentColor' : 'none'} aria-hidden="true" />
-          お気に入り <span>{favorites.length}</span>
+          <Heart size={15} fill={sourceFilter === 'favorites' ? 'currentColor' : 'none'} aria-hidden="true" />
+          お気に入り <span>{validFavoriteIds.length}</span>
         </button>
       </div>
 
@@ -354,11 +538,18 @@ export function TemplatesPage() {
           aria-pressed={category === 'すべて'}
           onClick={() => setCategory('すべて')}
         >
-          すべて <span>{projectTemplates.length}</span>
+          すべて <span>{allTemplates.filter((entry) =>
+            sourceFilter === 'all' ||
+            (sourceFilter === 'favorites' ? validFavoriteIds.includes(entry.id) : (sourceFilter === 'custom') === entry.isCustom),
+          ).length}</span>
         </button>
         {templateCategories.map((item) => {
           const Icon = categoryIcons[item.name]
-          const count = projectTemplates.filter((entry) => entry.category === item.name).length
+          const count = allTemplates.filter((entry) =>
+            entry.category === item.name &&
+            (sourceFilter === 'all' || sourceFilter === 'favorites' || (sourceFilter === 'custom') === entry.isCustom) &&
+            (sourceFilter !== 'favorites' || validFavoriteIds.includes(entry.id)),
+          ).length
           return (
             <button
               type="button"
@@ -384,7 +575,11 @@ export function TemplatesPage() {
           {showRecommendations
             ? 'その他のテンプレート'
             : category === 'すべて'
-              ? 'テンプレート一覧'
+              ? sourceFilter === 'custom'
+                ? 'マイテンプレート'
+                : sourceFilter === 'favorites'
+                  ? 'お気に入り'
+                  : 'テンプレート一覧'
               : category}
         </h2>
         <span>{filteredTemplates.length} 件</span>
@@ -393,7 +588,10 @@ export function TemplatesPage() {
         <div className="templates-grid">
           {filteredTemplates.map((item) => {
             const Icon = categoryIcons[item.category]
-            const isFavorite = favorites.includes(item.id)
+            const isFavorite = validFavoriteIds.includes(item.id)
+            const customTemplate = item.isCustom
+              ? customTemplates.find((template) => template.id === item.id)
+              : undefined
             return (
               <article
                 className="template-card"
@@ -420,30 +618,57 @@ export function TemplatesPage() {
                 </p>
                 <div className="template-badges">
                   <span className="template-category-badge">{item.category}</span>
-                  <span className={`template-difficulty difficulty-${item.difficulty}`}>{item.difficulty}</span>
+                  <span className={`template-difficulty${item.difficulty ? ` difficulty-${item.difficulty}` : ''}`}>
+                    {item.difficulty ?? '難易度未設定'}
+                  </span>
+                  {item.isCustom && <span className="template-category-badge">マイテンプレート</span>}
                 </div>
                 <div className="template-card-meta">
-                  <span><Clock3 size={13} aria-hidden="true" /> 約{item.estimatedMinutes}分</span>
+                  <span><Clock3 size={13} aria-hidden="true" /> {item.isCustom ? 'ユーザー作成' : `約${item.estimatedMinutes}分`}</span>
                   <span><Code2 size={13} aria-hidden="true" /> {item.libraries.map((library) => library.name).join('・')}</span>
                 </div>
                 <div className="template-card-actions">
-                  <button type="button" className="template-preview-button" onClick={() => openPreview(item)}>
+                  <button type="button" className="template-preview-button" onClick={(event) => openPreview(item, event.currentTarget)}>
                     詳細を見る
                   </button>
                   <button type="button" className="primary-button" onClick={() => openCreation(item)}>
                     このテンプレートを使う
                   </button>
                 </div>
+                {customTemplate && (
+                  <div className="custom-template-actions">
+                    <button type="button" onClick={() => openTemplateEditor(customTemplate)} disabled={templateBusy}>
+                      <Pencil size={13} aria-hidden="true" /> 編集
+                    </button>
+                    <button type="button" onClick={() => void duplicateTemplate(customTemplate)} disabled={templateBusy}>
+                      <Copy size={13} aria-hidden="true" /> 複製
+                    </button>
+                    <button type="button" className="is-danger" onClick={() => setDeletingTemplate(customTemplate)} disabled={templateBusy}>
+                      <Trash2 size={13} aria-hidden="true" /> 削除
+                    </button>
+                  </div>
+                )}
               </article>
             )
           })}
         </div>
       ) : (
         <div className="templates-empty">
-          <Search size={25} aria-hidden="true" />
-          <h3>条件に一致するテンプレートがありません</h3>
-          <p>キーワードや絞り込み条件を変えて、もう一度お試しください。</p>
-          <button type="button" onClick={resetFilters}>絞り込みをクリア</button>
+          {sourceFilter === 'custom' && customTemplates.length === 0 && !query.trim() ? (
+            <>
+              <Files size={25} aria-hidden="true" />
+              <h3>マイテンプレートはまだありません</h3>
+              <p>プロジェクト一覧から、保存したいプロジェクトをテンプレートとして保存できます。</p>
+              <Link className="primary-button" to="/projects">プロジェクトを開く <ArrowRight size={14} /></Link>
+            </>
+          ) : (
+            <>
+              <Search size={25} aria-hidden="true" />
+              <h3>条件に一致するテンプレートがありません</h3>
+              <p>キーワードや絞り込み条件を変えて、もう一度お試しください。</p>
+              <button type="button" onClick={resetFilters}>絞り込みをクリア</button>
+            </>
+          )}
         </div>
       )}
 
@@ -479,15 +704,21 @@ export function TemplatesPage() {
                 <span className="section-kicker">{selectedTemplate.category}</span>
                 <h2 id="template-detail-title">{selectedTemplate.name}</h2>
                 <p>{selectedTemplate.description}</p>
+                {selectedTemplate.isCustom && <span className="template-custom-source">マイテンプレート</span>}
               </div>
             </div>
             <div className="template-detail-scroll">
               <div className="template-detail-facts">
-                <span className={`template-difficulty difficulty-${selectedTemplate.difficulty}`}>
-                  難易度: {selectedTemplate.difficulty}
+                <span className={`template-difficulty${selectedTemplate.difficulty ? ` difficulty-${selectedTemplate.difficulty}` : ''}`}>
+                  難易度: {selectedTemplate.difficulty ?? '未設定'}
                 </span>
-                <span><Clock3 size={14} /> 約{selectedTemplate.estimatedMinutes}分</span>
+                {!selectedTemplate.isCustom && <span><Clock3 size={14} /> 約{selectedTemplate.estimatedMinutes}分</span>}
                 <span>ライブラリ: {selectedTemplate.libraries.map((library) => library.name).join('、')}</span>
+                <span>
+                  {selectedTemplate.libraries.some((library) => library.support === 'Pyodideで自動読み込み')
+                    ? 'Pyodideで自動読み込み（初回ダウンロード）'
+                    : 'Python標準ライブラリのみ'}
+                </span>
               </div>
               <div className="template-detail-columns">
                 <section>
@@ -514,6 +745,11 @@ export function TemplatesPage() {
                 <section className="template-files-section">
                   <h3>ファイル構成</h3>
                   <ul className="template-file-list">
+                    {selectedTemplate.directories.map((path) => (
+                      <li key={`directory:${path}`} className="template-directory-entry">
+                        <span><Files size={13} aria-hidden="true" /> {path}/</span>
+                      </li>
+                    ))}
                     {Object.keys(selectedTemplate.files).map((path) => (
                       <li key={path} className={selectedFile === path ? 'is-selected' : ''}>
                         <button type="button" onClick={() => setSelectedFile(path)}>
@@ -560,6 +796,8 @@ export function TemplatesPage() {
             className="template-create-modal"
             onSubmit={(event) => void handleCreateProject(event)}
             aria-labelledby="template-create-title"
+            role="dialog"
+            aria-modal="true"
           >
             <button
               className="template-modal-close"
@@ -602,15 +840,13 @@ export function TemplatesPage() {
                 </div>
               ))}
             </div>
-            {creationTemplate.libraries.some((library) => library.support === 'Pyodideで自動読み込み') && (
-              <p className="template-library-warning">
-                {creationTemplate.libraries
-                  .filter((library) => library.support === 'Pyodideで自動読み込み')
-                  .map((library) => library.note)
-                  .filter(Boolean)
-                  .join(' ')}
-              </p>
-            )}
+            <p className="template-library-warning">
+              {creationTemplate.libraries.some((library) => library.support === 'Pyodideで自動読み込み')
+                ? `Pyodideで自動読み込み: ${creationTemplate.libraries.filter((library) => library.support === 'Pyodideで自動読み込み').map((library) => library.name).join('、')}（初回実行時にダウンロードが必要です）`
+                : creationTemplate.libraries.some((library) => library.support === '要確認（自動判定なし）')
+                  ? 'マイテンプレートのライブラリ依存は自動判定していません。コードのimport文を確認してください。'
+                  : 'Python標準ライブラリのみで実行できます。'}
+            </p>
             {creationError && <p className="templates-error" role="alert">{creationError}</p>}
             <div className="template-create-actions">
               <button type="button" onClick={() => setCreationTemplate(null)} disabled={creating}>キャンセル</button>
@@ -619,6 +855,67 @@ export function TemplatesPage() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {editingTemplate && (
+        <div className="template-modal-backdrop">
+          <form
+            className="template-create-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-custom-template-title"
+            onSubmit={(event) => void handleUpdateTemplate(event)}
+          >
+            <button className="template-modal-close" type="button" aria-label="閉じる" onClick={() => setEditingTemplate(null)}>
+              <X size={19} aria-hidden="true" />
+            </button>
+            <span className="section-kicker">MY TEMPLATE</span>
+            <h2 id="edit-custom-template-title">マイテンプレートを編集</h2>
+            <label>テンプレート名<input autoFocus value={templateFormName} onChange={(event) => setTemplateFormName(event.target.value)} maxLength={80} required /></label>
+            <label>説明<textarea value={templateFormDescription} onChange={(event) => setTemplateFormDescription(event.target.value)} maxLength={500} rows={3} /></label>
+            <label>タグ（カンマ区切り）<input value={templateFormTags} onChange={(event) => setTemplateFormTags(event.target.value)} placeholder="学習, 基礎" maxLength={200} /></label>
+            <label>カテゴリー
+              <select value={templateFormCategory} onChange={(event) => setTemplateFormCategory(event.target.value as TemplateCategory)}>
+                {templateCategories.map(({ name }) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </label>
+            <label>難易度
+              <select value={templateFormDifficulty} onChange={(event) => setTemplateFormDifficulty(event.target.value as TemplateDifficulty | '')}>
+                <option value="">未設定</option>
+                <option value="初級">初級</option>
+                <option value="中級">中級</option>
+                <option value="上級">上級</option>
+              </select>
+            </label>
+            {templateFormError && <p className="templates-error" role="alert">{templateFormError}</p>}
+            <div className="template-create-actions">
+              <button type="button" onClick={() => setEditingTemplate(null)} disabled={templateBusy}>キャンセル</button>
+              <button className="primary-button" type="submit" disabled={templateBusy}>
+                {templateBusy ? '保存しています…' : '変更を保存'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {deletingTemplate && (
+        <div className="template-modal-backdrop">
+          <section className="template-create-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-custom-template-title">
+            <button className="template-modal-close" type="button" aria-label="閉じる" onClick={() => setDeletingTemplate(null)} disabled={templateBusy}>
+              <X size={19} aria-hidden="true" />
+            </button>
+            <span className="section-kicker">MY TEMPLATE</span>
+            <h2 id="delete-custom-template-title">テンプレートを削除しますか？</h2>
+            <p className="template-create-description">「{deletingTemplate.name}」を削除します。ここから作成したプロジェクトやファイルは削除されません。</p>
+            {favoritesError && <p className="templates-error" role="alert">{favoritesError}</p>}
+            <div className="template-create-actions">
+              <button type="button" onClick={() => setDeletingTemplate(null)} disabled={templateBusy}>キャンセル</button>
+              <button type="button" className="danger-button" onClick={() => void confirmDeleteTemplate()} disabled={templateBusy}>
+                {templateBusy ? '削除しています…' : '削除する'}
+              </button>
+            </div>
+          </section>
         </div>
       )}
     </section>

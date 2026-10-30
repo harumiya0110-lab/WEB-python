@@ -1794,6 +1794,27 @@
   color: var(--color-text);
 }
 
+.project-template-save {
+  min-height: 31px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 9px;
+  padding: 0 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: var(--color-surface);
+  color: var(--color-accent-strong);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.project-template-save:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
 .project-card-actions > button.is-danger:hover {
   color: var(--color-danger);
 }
@@ -1878,7 +1899,8 @@
 }
 
 .project-dialog input,
-.project-dialog textarea {
+.project-dialog textarea,
+.project-dialog select {
   width: 100%;
   padding: 9px 10px;
   border: 1px solid var(--color-border);
@@ -2148,6 +2170,45 @@
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.template-source-tabs {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.template-source-tabs button {
+  min-height: 34px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.template-source-tabs button.is-active,
+.template-source-tabs button:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+}
+
+.template-source-tabs button span {
+  min-width: 17px;
+  padding: 1px 4px;
+  border-radius: 999px;
+  background: var(--color-surface-subtle);
+  text-align: center;
+  font-size: 9px;
 }
 
 .template-search {
@@ -2491,6 +2552,45 @@
   white-space: nowrap;
 }
 
+.custom-template-actions {
+  display: flex;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.custom-template-actions button {
+  min-height: 29px;
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.custom-template-actions button:hover {
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
+}
+
+.custom-template-actions button.is-danger:hover {
+  border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
+  color: var(--color-danger);
+}
+
+.custom-template-actions button:disabled,
+.project-template-save:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .templates-empty {
   min-height: 230px;
   display: flex;
@@ -2690,6 +2790,26 @@
   cursor: pointer;
 }
 
+.template-directory-entry > span {
+  min-height: 29px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-text-muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.template-custom-source {
+  display: inline-flex;
+  margin-top: 6px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  font-size: 9px;
+}
+
 .template-file-list .is-selected button {
   border-color: var(--color-accent);
   background: var(--color-accent-soft);
@@ -2797,7 +2917,8 @@
 }
 
 .template-create-modal > label input,
-.template-create-modal > label textarea {
+.template-create-modal > label textarea,
+.template-create-modal > label select {
   min-height: 39px;
   padding: 9px 10px;
   border: 1px solid var(--color-border);

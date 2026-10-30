@@ -10,8 +10,14 @@ export type TemplateCategory =
 
 export type TemplateDifficulty = '初級' | '中級' | '上級'
 
-export type TemplateLibrarySupport = '標準ライブラリ' | 'Pyodideで自動読み込み'
-export type TemplateAvailability = 'available' | 'requires-pyodide-packages'
+export type TemplateLibrarySupport =
+  | '標準ライブラリ'
+  | 'Pyodideで自動読み込み'
+  | '要確認（自動判定なし）'
+export type TemplateAvailability =
+  | 'available'
+  | 'requires-pyodide-packages'
+  | 'manual-review'
 
 export interface ProjectTemplate {
   id: string
@@ -25,7 +31,8 @@ export interface ProjectTemplate {
   estimatedMinutes: number
   recommended: boolean
   featured: boolean
-  createdAt: number
+  createdAt?: number
+  sortOrder: number
   whatYouCanDo: string
   learningPoints: string[]
   runInstructions: string
@@ -38,8 +45,22 @@ export interface ProjectTemplate {
   activeFile: string
 }
 
+export interface UserTemplate {
+  id: string
+  name: string
+  description: string
+  tags: string[]
+  category: TemplateCategory
+  difficulty?: TemplateDifficulty
+  files: Record<string, string>
+  directories: string[]
+  activeFile: string
+  createdAt: number
+  updatedAt: number
+}
+
 export interface TemplateLibrary {
-    name: string
-    support: TemplateLibrarySupport
-    note?: string
+  name: string
+  support: TemplateLibrarySupport
+  note?: string
 }
