@@ -5,7 +5,7 @@ import { HomePage } from './pages/HomePage'
 import { EditorPage } from './pages/EditorPage'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { TemplatesPage } from './pages/TemplatesPage'
-import { PlaceholderPage } from './pages/PlaceholderPage'
+import { SettingsPage } from './pages/SettingsPage'
 import { useSettingsStore } from './store/settingsStore'
 import './App.css'
 
@@ -24,15 +24,7 @@ function AppRoutes() {
           <Route path="editor/:projectId?" element={<EditorPage />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="templates" element={<TemplatesPage />} />
-          <Route
-            path="settings"
-            element={
-              <PlaceholderPage
-                title="設定"
-                description="PyStudioの環境設定を管理できます。"
-              />
-            }
-          />
+          <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
