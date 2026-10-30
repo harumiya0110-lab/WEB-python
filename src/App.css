@@ -1919,6 +1919,93 @@
   color: #fff;
 }
 
+.sample-library {
+  width: min(560px, 100%);
+  height: fit-content;
+  margin: 7vh auto 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.sample-library > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sample-library h2 {
+  margin: 5px 0;
+  color: var(--color-text);
+  font-size: 17px;
+}
+
+.sample-library header p,
+.sample-library-note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.sample-library > header > button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.sample-list {
+  max-height: min(52vh, 430px);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  overflow: auto;
+  padding: 13px;
+}
+
+.sample-list > button {
+  min-width: 0;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-align: left;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sample-list > button:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.sample-list small {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+  font-size: 9px;
+}
+
+.sample-library-note {
+  padding: 0 16px 14px;
+  line-height: 1.6;
+}
+
 @media (max-width: 700px) {
   .projects-heading {
     align-items: flex-start;
@@ -1931,6 +2018,10 @@
 
   .projects-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sample-list {
+    grid-template-columns: 1fr;
   }
 
   .project-card {

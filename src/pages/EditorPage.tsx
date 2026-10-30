@@ -1,6 +1,7 @@
 import Editor from '@monaco-editor/react'
 import {
   AlertCircle,
+  BookOpen,
   Check,
   ChevronDown,
   ChevronRight,
@@ -55,6 +56,21 @@ const fileLanguage = (path: string): string => {
   }
   return languages[extension ?? ''] ?? 'plaintext'
 }
+
+const beginnerSamples = [
+  { title: 'Hello World', category: '基本', code: 'print("Hello, world!")\n' },
+  { title: '変数', category: '基本', code: 'name = "PyStudio"\ncount = 3\nprint(f"{name}: {count}")\n' },
+  { title: '条件分岐', category: '制御構文', code: 'score = 82\nif score >= 80:\n    print("合格です")\nelse:\n    print("もう少しです")\n' },
+  { title: 'for文', category: '制御構文', code: 'for number in range(1, 6):\n    print(number)\n' },
+  { title: 'while文', category: '制御構文', code: 'count = 3\nwhile count > 0:\n    print(count)\n    count -= 1\nprint("スタート!")\n' },
+  { title: '関数', category: '基本', code: 'def greet(name):\n    return f"こんにちは、{name}さん"\n\nprint(greet("Python"))\n' },
+  { title: 'リスト', category: 'データ', code: 'fruits = ["りんご", "みかん", "ぶどう"]\nfruits.append("もも")\nfor fruit in fruits:\n    print(fruit)\n' },
+  { title: '辞書', category: 'データ', code: 'profile = {"name": "Aoi", "level": "beginner"}\nfor key, value in profile.items():\n    print(f"{key}: {value}")\n' },
+  { title: 'クラス', category: '基本', code: 'class Dog:\n    def __init__(self, name):\n        self.name = name\n\n    def speak(self):\n        print(f"{self.name}: ワン!")\n\nDog("ポチ").speak()\n' },
+  { title: 'ファイル操作', category: '応用', code: 'with open("sample.txt", "w", encoding="utf-8") as file:\n    file.write("PyStudioから保存しました")\n\nwith open("sample.txt", encoding="utf-8") as file:\n    print(file.read())\n' },
+  { title: 'グラフ作成', category: '応用', code: 'import matplotlib.pyplot as plt\n\nx = [1, 2, 3, 4, 5]\ny = [2, 4, 6, 8, 10]\nplt.plot(x, y)\nplt.title("Sample chart")\nplt.show()\n' },
+  { title: 'pandas基本操作', category: '応用', code: 'import pandas as pd\n\ndata = {"name": ["Aoi", "Ren"], "score": [85, 92]}\ndf = pd.DataFrame(data)\nprint(df)\n' },
+]
 
 function hasFilePathConflict(
   path: string,
@@ -186,8 +202,11 @@ export function EditorPage() {
   const [commandQuery, setCommandQuery] = useState('')
   const [fileDialog, setFileDialog] = useState<FileDialogState | null>(null)
   const [fileDialogValue, setFileDialogValue] = useState('')
+  const [sampleLibraryOpen, setSampleLibraryOpen] = useState(false)
   const [dangerConfirmation, setDangerConfirmation] = useState<{
+    title: string
     message: string
+    confirmLabel: string
     onConfirm: () => void
   } | null>(null)
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
@@ -312,6 +331,31 @@ export function EditorPage() {
     if (!started) notify('Python環境の準備完了後に実行できます')
   }, [markRun, notify, project.activeFile, project.files, run, setPanelVisibility])
 
+  const loadBeginnerSample = (title: string, code: string) => {
+    const targetPath = project.activeFile.endsWith('.py')
+      ? project.activeFile
+      : 'main.py'
+    const applySample = () => {
+      if (project.files[targetPath] === undefined) addFile(targetPath)
+      openFile(targetPath)
+      updateFile(targetPath, code)
+      setSampleLibraryOpen(false)
+      notify(`${title}のサンプルを読み込みました`)
+    }
+
+    setSampleLibraryOpen(false)
+    if (project.files[targetPath]?.trim()) {
+      setDangerConfirmation({
+        title: 'サンプルコードを読み込みますか？',
+        message: `${targetPath} の内容を「${title}」のサンプルで置き換えます。`,
+        confirmLabel: '置き換える',
+        onConfirm: applySample,
+      })
+      return
+    }
+    applySample()
+  }
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const command = event.ctrlKey || event.metaKey
@@ -429,7 +473,9 @@ export function EditorPage() {
   const handleDelete = useCallback(
     (path: string) => {
       setDangerConfirmation({
+        title: '削除の確認',
         message: `「${path}」を削除しますか？この操作は取り消せません。`,
+        confirmLabel: '削除する',
         onConfirm: () => {
           deleteFile(path)
           notify('ファイルを削除しました')
@@ -442,7 +488,9 @@ export function EditorPage() {
   const handleDeleteDirectory = useCallback(
     (path: string) => {
       setDangerConfirmation({
+        title: '削除の確認',
         message: `「${path}」と中のファイルをすべて削除しますか？この操作は取り消せません。`,
+        confirmLabel: '削除する',
         onConfirm: () => {
           deleteDirectory(path)
           notify('フォルダーを削除しました')
@@ -732,6 +780,7 @@ export function EditorPage() {
               ))}
             </div>
             <div className="editor-tab-actions">
+              <button type="button" title="サンプルコード" onClick={() => setSampleLibraryOpen(true)}><BookOpen size={14} /></button>
               <button type="button" title="コードをコピー" onClick={() => void handleCopyCode()}><Copy size={14} /></button>
               <button type="button" title="ターミナルを表示" onClick={() => setPanelVisibility({ showTerminal: !terminalVisible })}><TerminalIcon size={15} /></button>
               <button type="button" title="プレビューを表示" onClick={() => setPanelVisibility({ showPreview: !previewVisible })}><Plus size={15} /></button>
@@ -1007,6 +1056,47 @@ export function EditorPage() {
           </section>
         </div>
       )}
+      {sampleLibraryOpen && (
+        <div
+          className="command-palette-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSampleLibraryOpen(false)
+          }}
+        >
+          <section
+            className="sample-library"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sample-library-title"
+          >
+            <header>
+              <div>
+                <span className="section-kicker">LEARN PYTHON</span>
+                <h2 id="sample-library-title">サンプルコード</h2>
+                <p>選んだサンプルをPythonファイルへ読み込みます。</p>
+              </div>
+              <button type="button" aria-label="閉じる" onClick={() => setSampleLibraryOpen(false)}>
+                <X size={18} />
+              </button>
+            </header>
+            <div className="sample-list">
+              {beginnerSamples.map((sample) => (
+                <button
+                  type="button"
+                  key={sample.title}
+                  onClick={() => loadBeginnerSample(sample.title, sample.code)}
+                >
+                  <span>{sample.title}</span>
+                  <small>{sample.category}</small>
+                </button>
+              ))}
+            </div>
+            <p className="sample-library-note">
+              グラフ／pandasの例は、Pyodideで該当ライブラリを利用できる環境が必要です。
+            </p>
+          </section>
+        </div>
+      )}
       {fileDialog && (
         <div
           className="command-palette-backdrop"
@@ -1067,7 +1157,7 @@ export function EditorPage() {
             aria-modal="true"
             aria-labelledby="delete-dialog-title"
           >
-            <h2 id="delete-dialog-title">削除の確認</h2>
+            <h2 id="delete-dialog-title">{dangerConfirmation.title}</h2>
             <p>{dangerConfirmation.message}</p>
             <div className="file-dialog-actions">
               <button type="button" onClick={() => setDangerConfirmation(null)}>
@@ -1081,7 +1171,7 @@ export function EditorPage() {
                   setDangerConfirmation(null)
                 }}
               >
-                削除する
+                {dangerConfirmation.confirmLabel}
               </button>
             </div>
           </section>
