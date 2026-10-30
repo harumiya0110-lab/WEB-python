@@ -6,7 +6,9 @@ import {
   ChevronDown,
   ChevronRight,
   Circle,
+  ClipboardCopy,
   Copy,
+  Download,
   FileCode2,
   FilePlus2,
   FolderPlus,
@@ -32,6 +34,12 @@ import { loadProject, saveProject } from '../services/localProjectService'
 import { createDefaultProject, useProjectStore } from '../store/projectStore'
 import { useSettingsStore } from '../store/settingsStore'
 import { isValidProjectPath } from '../types/project'
+import {
+  copyTextToClipboard,
+  downloadTableCsv,
+  tableExportScope,
+  tableToTsv,
+} from '../python/tableExport'
 
 type TerminalTab = 'output' | 'errors'
 type FileDialogState =
@@ -208,6 +216,24 @@ export function EditorPage() {
     window.clearTimeout(notificationTimer.current)
     notificationTimer.current = window.setTimeout(() => setNotification(''), 2600)
   }, [])
+
+  const copyTable = useCallback(async (table: (typeof tablePreviews)[number]) => {
+    try {
+      await copyTextToClipboard(tableToTsv(table))
+      notify('表をコピーしました。')
+    } catch (error) {
+      notify(error instanceof Error ? `表をコピーできませんでした: ${error.message}` : '表をコピーできませんでした。')
+    }
+  }, [notify])
+
+  const saveTableCsv = useCallback((table: (typeof tablePreviews)[number]) => {
+    try {
+      downloadTableCsv(table)
+      notify('表示中の表をCSVで保存しました。')
+    } catch (error) {
+      notify(error instanceof Error ? `CSVを保存できませんでした: ${error.message}` : 'CSVを保存できませんでした。')
+    }
+  }, [notify])
 
   useEffect(() => {
     isMountedRef.current = true
@@ -967,12 +993,36 @@ export function EditorPage() {
                       )
                       return (
                         <article className="dataframe-preview" key={`${table.executionId}-${table.previewId}`}>
-                          <h4>表 {tableIndex + 1}</h4>
+                          <div className="dataframe-preview-heading">
+                            <h4>表 {tableIndex + 1}</h4>
+                            <div className="dataframe-preview-actions">
+                              <button
+                                type="button"
+                                onClick={() => void copyTable(table)}
+                                aria-label={`表 ${tableIndex + 1}をコピー`}
+                                title="表示中の表をタブ区切り形式でコピー"
+                              >
+                                <ClipboardCopy size={13} />
+                                <span>コピー</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => saveTableCsv(table)}
+                                aria-label={`表 ${tableIndex + 1}をCSVで保存`}
+                                title="表示中の表をCSVで保存"
+                              >
+                                <Download size={13} />
+                                <span>CSV</span>
+                              </button>
+                            </div>
+                          </div>
                           <p>
                             全{table.totalRows}行・{table.totalColumns}列
                             （{table.rows.length}行・{table.columns.length}列を表示）
                             {table.truncated && '。データの一部を省略しています。'}
+                            {table.cellDetails.some((detail) => detail.truncated) && '。長いセルの末尾も省略しています。'}
                           </p>
+                          <p className="dataframe-export-scope">{tableExportScope(table)}</p>
                           <div className="dataframe-table-scroll">
                             <table>
                               <thead>
@@ -1007,6 +1057,9 @@ export function EditorPage() {
                                 ))}
                               </tbody>
                             </table>
+                            {table.rows.length === 0 && (
+                              <p className="dataframe-empty" role="status">データ行はありません。</p>
+                            )}
                           </div>
                         </article>
                       )

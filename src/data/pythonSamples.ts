@@ -17,7 +17,7 @@ export const pythonSamples: PythonSample[] = [
   { id: 'classes', title: 'クラス', category: '基本', code: 'class Dog:\n    def __init__(self, name):\n        self.name = name\n\n    def speak(self):\n        print(f"{self.name}: ワン!")\n\nDog("ポチ").speak()\n' },
   { id: 'file-operations', title: 'ファイル操作', category: '応用', code: 'with open("sample.txt", "w", encoding="utf-8") as file:\n    file.write("PyStudioから保存しました")\n\nwith open("sample.txt", encoding="utf-8") as file:\n    print(file.read())\n' },
   { id: 'graph-creation', title: 'グラフ作成', category: '応用', code: 'import matplotlib.pyplot as plt\n\nx = [1, 2, 3, 4, 5]\ny = [2, 4, 6, 8, 10]\nplt.plot(x, y)\nplt.title("Sample chart")\nplt.show()\n' },
-  { id: 'pandas-basics', title: 'pandas基本操作', category: '応用', code: 'import pandas as pd\n\ndata = {"商品": ["りんご", "みかん", "ぶどう"], "価格": [150, 100, 300], "在庫": [12, 20, 5]}\ndf = pd.DataFrame(data)\n\nprint("商品データを表示します")\ndisplay(df)\nprint("平均価格:", df["価格"].mean())\n' },
+  { id: 'pandas-basics', title: 'pandas基本操作', category: '応用', code: 'import pandas as pd\n\ndata = {"商品": ["りんご", "みかん", "ぶどう"], "価格": [150, 100, 300], "在庫": [12, 20, 5]}\ndf = pd.DataFrame(data)\n\n# print()は文字で出力し、display()は実行情報に表を表示します\nprint("商品データを表で確認します")\ndisplay(df)\n\n# 1列を取り出したSeriesも表で表示できます\nprices = df["価格"]\ndisplay(prices)\nprint("平均価格:", prices.mean())\n# 表の「コピー」や「CSV」ボタンから表示中のデータを保存できます\n' },
 ]
 
 export function getPythonSample(id: string): PythonSample {

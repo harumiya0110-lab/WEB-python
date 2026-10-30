@@ -67,7 +67,9 @@ plt.show = lambda *args, **kwargs: None
       }
       if (template.id === 'pandas-basics') {
         expect(tablePreviews.length).toBeGreaterThan(previousPreviewCount)
-        expect(JSON.parse(tablePreviews.at(-1) ?? 'null').columns).toContain('商品')
+        const pandasPreviews = tablePreviews.slice(previousPreviewCount).map((json) => JSON.parse(json))
+        expect(pandasPreviews.some((preview) => preview.columns.includes('商品'))).toBe(true)
+        expect(pandasPreviews.some((preview) => preview.columns.includes('価格'))).toBe(true)
       }
       pyodide.runPython(`
 for _module in ${JSON.stringify(fileList.filter((path) => path.endsWith('.py')).map((path) => path.replace(/\.py$/, '').replaceAll('/', '.')))}:

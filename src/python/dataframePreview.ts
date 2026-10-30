@@ -1,4 +1,4 @@
-import type { TablePreview } from './protocol'
+import type { TableCellDetail, TablePreview } from './protocol'
 
 export const DATAFRAME_PREVIEW_LIMITS = {
   rows: 100,
@@ -11,10 +11,25 @@ export const DATAFRAME_PREVIEW_LIMITS = {
   detailBytes: 128 * 1024,
 } as const
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isTableCellDetail(value: unknown): value is TableCellDetail {
+  if (!isRecord(value)) return false
+  return (
+    Number.isSafeInteger(value.row) &&
+    Number.isSafeInteger(value.column) &&
+    typeof value.value === 'string' &&
+    value.value.length <= DATAFRAME_PREVIEW_LIMITS.detailCharacters &&
+    typeof value.truncated === 'boolean'
+  )
+}
+
 export function isTablePreview(
   value: unknown,
 ): value is Omit<TablePreview, 'executionId' | 'previewId'> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  if (!isRecord(value)) return false
   const preview = value as Record<string, unknown>
   if (
     !Array.isArray(preview.columns) ||
@@ -27,6 +42,13 @@ export function isTablePreview(
   const indices = preview.index as unknown[]
   const rows = preview.rows as unknown[]
   const cellDetails = preview.cellDetails as unknown[]
+  if (!Array.isArray(cellDetails)) return false
+  if (!cellDetails.every(isTableCellDetail)) return false
+  const validCellDetails = cellDetails as TableCellDetail[]
+  const detailBytes = validCellDetails.reduce(
+    (total, detail) => total + new TextEncoder().encode(JSON.stringify(detail)).byteLength,
+    0,
+  )
   if (
     !Array.isArray(cellDetails) ||
     columns.length > DATAFRAME_PREVIEW_LIMITS.columns ||
@@ -34,6 +56,7 @@ export function isTablePreview(
     indices.length !== rows.length ||
     rows.length * columns.length > DATAFRAME_PREVIEW_LIMITS.cells ||
     cellDetails.length > DATAFRAME_PREVIEW_LIMITS.cells ||
+    detailBytes > DATAFRAME_PREVIEW_LIMITS.detailBytes ||
     !columns.every((column) =>
       typeof column === 'string' && column.length <= DATAFRAME_PREVIEW_LIMITS.cellCharacters,
     ) ||
@@ -45,18 +68,11 @@ export function isTablePreview(
       row.length === columns.length &&
       row.every((cell) => typeof cell === 'string' && cell.length <= DATAFRAME_PREVIEW_LIMITS.cellCharacters),
     ) ||
-    !cellDetails.every((detail) =>
-      typeof detail === 'object' &&
-      detail !== null &&
-      Number.isSafeInteger((detail as Record<string, unknown>).row) &&
-      Number.isSafeInteger((detail as Record<string, unknown>).column) &&
-      ((detail as Record<string, unknown>).row as number) >= 0 &&
-      ((detail as Record<string, unknown>).row as number) < rows.length &&
-      ((detail as Record<string, unknown>).column as number) >= 0 &&
-      ((detail as Record<string, unknown>).column as number) < columns.length &&
-      typeof (detail as Record<string, unknown>).value === 'string' &&
-      ((detail as Record<string, unknown>).value as string).length <= DATAFRAME_PREVIEW_LIMITS.detailCharacters &&
-      typeof (detail as Record<string, unknown>).truncated === 'boolean',
+    !validCellDetails.every((detail) =>
+      detail.row >= 0 &&
+      detail.row < rows.length &&
+      detail.column >= 0 &&
+      detail.column < columns.length,
     ) ||
     !Number.isSafeInteger(preview.totalRows) ||
     (preview.totalRows as number) < rows.length ||
