@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   Code2,
   FolderKanban,
   House,
@@ -12,6 +13,7 @@ import { useSettingsStore } from '../../store/settingsStore'
 
 const navigation = [
   { to: '/', label: 'ホーム', icon: House, end: true },
+  { to: '/learning', label: '学習', icon: BookOpen },
   { to: '/editor/', label: 'エディター', icon: Code2 },
   { to: '/projects', label: 'プロジェクト', icon: FolderKanban },
   { to: '/templates', label: 'テンプレート', icon: PanelsTopLeft },

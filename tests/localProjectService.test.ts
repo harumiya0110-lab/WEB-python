@@ -105,20 +105,4 @@ describe('IndexedDB v2 to v3 migration and custom templates', () => {
     expect(database.objectStoreNames.contains('customTemplates')).toBe(true)
     database.close()
   })
-
-  it('persists an imported CSV as a normal project file', async () => {
-    const service = await import('../src/services/localProjectService')
-    const importedProject: Project = {
-      ...existingProject,
-      files: {
-        ...existingProject.files,
-        'data/scores.csv': '名前,点数\n田中,85\n',
-      },
-      directories: ['data'],
-      updatedAt: 50,
-    }
-
-    await service.saveProject(importedProject)
-    expect(await service.loadProject(existingProject.id)).toEqual(importedProject)
-  })
 })

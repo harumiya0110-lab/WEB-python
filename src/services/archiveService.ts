@@ -10,12 +10,11 @@ import type {
   PyStudioArchiveManifest,
 } from '../types/archive'
 import type { TemplateCategory, TemplateDifficulty, UserTemplate } from '../types/template'
-import { MAX_PROJECT_FILE_BYTES, MAX_PROJECT_TOTAL_BYTES } from './projectFileLimits'
 
 const MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
 const MAX_ARCHIVE_FILES = 100
-const MAX_TOTAL_UNCOMPRESSED_BYTES = MAX_PROJECT_TOTAL_BYTES
-const MAX_FILE_BYTES = MAX_PROJECT_FILE_BYTES
+const MAX_TOTAL_UNCOMPRESSED_BYTES = 20 * 1024 * 1024
+const MAX_FILE_BYTES = 2 * 1024 * 1024
 const MAX_BACKUP_ITEMS = 100
 const MAX_BACKUP_FAVORITES = 1_000
 const SUPPORTED_TEXT_EXTENSIONS = new Set([

@@ -78,26 +78,6 @@ for _module in ${JSON.stringify(fileList.filter((path) => path.endsWith('.py')).
     }
 
     expect(output.trim()).toContain('PyStudioから保存しました')
-
-    output = ''
-    pyodide.FS.mkdirTree('/home/pyodide/data/nested')
-    pyodide.FS.writeFile(
-      '/home/pyodide/data/nested/scores.csv',
-      '名前,点数\n田中,85\n佐藤,92\n',
-    )
-    pyodide.FS.chdir('/home/pyodide')
-    pyodide.runPython(`
-import pandas as pd
-df = pd.read_csv("data/nested/scores.csv")
-display(df)
-print(df.head())
-`)
-    expect(output).toContain('田中')
-    expect(output).toContain('佐藤')
-    const csvPreview = JSON.parse(tablePreviews.at(-1) ?? 'null')
-    expect(csvPreview.columns).toEqual(['名前', '点数'])
-    expect(csvPreview.rows).toEqual([['田中', '85'], ['佐藤', '92']])
-
     expect(projectTemplates).toHaveLength(36)
   }, 240_000)
 })

@@ -6,8 +6,10 @@ import { EditorPage } from './pages/EditorPage'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { TemplatesPage } from './pages/TemplatesPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { LearningPage } from './pages/LearningPage'
 import { useSettingsStore } from './store/settingsStore'
 import './App.css'
+import './styles/learning.css'
 
 function AppRoutes() {
   const theme = useSettingsStore((state) => state.theme)
@@ -24,6 +26,7 @@ function AppRoutes() {
           <Route path="editor/:projectId?" element={<EditorPage />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="templates" element={<TemplatesPage />} />
+          <Route path="learning" element={<LearningPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
