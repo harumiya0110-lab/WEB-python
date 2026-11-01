@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   createPythonFunctionTestHarness,
+  gradePythonInputTests,
   getExpectedOutputForInputs,
   gradePythonFunctionTests,
   gradePythonOutput,
@@ -100,5 +101,36 @@ describe('learning output grading', () => {
       { type: 'template', template: 'こんにちは {1}' },
       ['Aoi'],
     )).toBeNull()
+  })
+
+  it('grades all configured interactive input cases and reports the first mismatch', () => {
+    const cases = [
+      { inputs: ['Aoi'], expectedOutput: 'こんにちは Aoi' },
+      { inputs: ['Ren'], expectedOutput: 'こんにちは Ren' },
+      { inputs: ['Mina'], expectedOutput: 'こんにちは Mina' },
+    ]
+    expect(gradePythonInputTests(cases, [
+      'こんにちは Aoi\n',
+      'こんにちは Ren',
+      'こんにちは Mina\n',
+    ])).toMatchObject({
+      correct: true,
+      passedCount: 3,
+      totalCount: 3,
+      firstFailedCase: null,
+      failedCase: null,
+    })
+    expect(gradePythonInputTests(cases, [
+      'こんにちは Aoi',
+      'こんにちはRen',
+      'こんにちは Mina',
+    ])).toMatchObject({
+      correct: false,
+      passedCount: 2,
+      totalCount: 3,
+      firstFailedCase: 2,
+      failedCase: { inputs: ['Ren'], expected: 'こんにちは Ren', actual: 'こんにちはRen' },
+    })
+    expect(gradePythonInputTests(cases, ['こんにちは Aoi'])).toBeNull()
   })
 })

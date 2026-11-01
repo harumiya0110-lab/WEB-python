@@ -1,4 +1,4 @@
-import type { LearningInputGradingRule, PythonFunctionTestCase, PythonTestValue } from '../types/learning'
+import type { LearningInputGradingRule, LearningInputTestCase, PythonFunctionTestCase, PythonTestValue } from '../types/learning'
 
 export interface OutputGrade {
   correct: boolean
@@ -18,6 +18,18 @@ export interface FunctionTestGrade {
     error?: string
   } | null
   userOutput: string
+}
+
+export interface InputTestGrade {
+  correct: boolean
+  passedCount: number
+  totalCount: number
+  firstFailedCase: number | null
+  failedCase: {
+    inputs: string[]
+    expected: string
+    actual: string
+  } | null
 }
 
 const FUNCTION_TEST_MARKER = '__PYSTUDIO_FUNCTION_TESTS__:'
@@ -57,6 +69,30 @@ export function getExpectedOutputForInputs(
   if (inputs.length !== 1 || inputs[0]!.trim() === '') return null
   const value = Number(inputs[0])
   return Number.isInteger(value) ? String(value + rule.operand) : null
+}
+
+export function gradePythonInputTests(
+  testCases: readonly LearningInputTestCase[],
+  actualOutputs: readonly string[],
+): InputTestGrade | null {
+  if (testCases.length === 0 || testCases.length !== actualOutputs.length) return null
+  const grades = testCases.map((testCase, index) =>
+    gradePythonOutput(testCase.expectedOutput, actualOutputs[index]!),
+  )
+  const passedCount = grades.filter((grade) => grade.correct).length
+  const firstFailedIndex = grades.findIndex((grade) => !grade.correct)
+  const failedCase = firstFailedIndex < 0 ? null : {
+    inputs: testCases[firstFailedIndex]!.inputs,
+    expected: grades[firstFailedIndex]!.expected,
+    actual: grades[firstFailedIndex]!.actual,
+  }
+  return {
+    correct: passedCount === testCases.length,
+    passedCount,
+    totalCount: testCases.length,
+    firstFailedCase: firstFailedIndex < 0 ? null : firstFailedIndex + 1,
+    failedCase,
+  }
 }
 
 export function createPythonFunctionTestHarness(

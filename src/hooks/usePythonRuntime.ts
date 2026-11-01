@@ -8,7 +8,7 @@ import {
 } from '../python/tablePreviewState'
 
 export interface OutputLine {
-  channel: 'stdout' | 'stderr' | 'error' | 'system' | 'input'
+  channel: 'stdout' | 'stderr' | 'error' | 'system' | 'input' | 'input-test-result'
   text: string
   id: number
 }
@@ -69,6 +69,9 @@ export function usePythonRuntime() {
           break
         case 'STDERR':
           appendOutput('stderr', message.text)
+          break
+        case 'INPUT_TEST_RESULT':
+          appendOutput('input-test-result', message.output)
           break
         case 'PREVIEW':
           setPreviews((current) => [...current, {
@@ -154,7 +157,7 @@ export function usePythonRuntime() {
   }, [spawnWorker])
 
   const run = useCallback(
-    (files: Record<string, string>, file: string) => {
+    (files: Record<string, string>, file: string, inputTestCases?: Array<{ inputs: string[] }>) => {
       if (status !== 'ready' || !workerRef.current || activeExecutionRef.current !== null) {
         return false
       }
@@ -172,6 +175,7 @@ export function usePythonRuntime() {
         executionId,
         activeFile: file,
         files,
+        inputTestCases,
       } satisfies WorkerRequest)
       timeoutRef.current = window.setTimeout(() => stopForTimeout(executionId), 20_000)
       return true

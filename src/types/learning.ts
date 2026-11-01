@@ -27,9 +27,14 @@ export interface PythonFunctionTestCase {
   expected: PythonTestValue
 }
 
+export interface LearningInputTestCase {
+  inputs: string[]
+  expectedOutput: string
+}
+
 export type LearningInputGradingRule =
-  | { type: 'template'; template: string }
-  | { type: 'integer-add'; operand: number }
+  | { type: 'template'; template: string; testCases?: LearningInputTestCase[] }
+  | { type: 'integer-add'; operand: number; testCases?: LearningInputTestCase[] }
 
 export interface LessonPractice {
   title: string

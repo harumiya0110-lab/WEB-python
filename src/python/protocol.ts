@@ -26,6 +26,7 @@ export type WorkerRequest =
       executionId: number
       activeFile: string
       files: Record<string, string>
+      inputTestCases?: Array<{ inputs: string[] }>
     }
   | { type: 'INPUT_RESPONSE'; requestId: number; value: string }
 
@@ -33,6 +34,7 @@ export type WorkerResponse =
   | { type: 'STATUS'; status: RuntimeStatus; message?: string }
   | { type: 'STDOUT'; executionId: number; text: string }
   | { type: 'STDERR'; executionId: number; text: string }
+  | { type: 'INPUT_TEST_RESULT'; executionId: number; index: number; output: string }
   | { type: 'PREVIEW'; executionId: number; dataUrl: string }
   | { type: 'TABLE_PREVIEW'; executionId: number; preview: TablePreview }
   | { type: 'INPUT_REQUEST'; executionId: number; requestId: number; prompt: string }

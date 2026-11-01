@@ -23,6 +23,8 @@ let tablePreviewBytes = 0
 let tablePreviewCount = 0
 let stdoutDecoder = new TextDecoder()
 let stderrDecoder = new TextDecoder()
+let automaticInputs: string[] | null = null
+let capturedStdout: string | null = null
 const inputResolvers = new Map<number, (value: string) => void>()
 
 function containsControlCharacter(value: string): boolean {
@@ -49,7 +51,10 @@ function writeOutput(type: 'STDOUT' | 'STDERR', text: string): void {
   const remaining = outputLimit - outputCharacters
   const clipped = text.slice(0, remaining)
   outputCharacters += clipped.length
-  if (clipped) post({ type, executionId: activeExecutionId, text: clipped })
+  if (clipped) {
+    if (type === 'STDOUT' && capturedStdout !== null) capturedStdout += clipped
+    else post({ type, executionId: activeExecutionId, text: clipped })
+  }
   if (text.length > remaining) {
     post({
       type: 'STDERR',
@@ -108,6 +113,7 @@ async function runPython(
   executionId: number,
   activeFile: string,
   files: Record<string, string>,
+  inputTestCases?: Array<{ inputs: string[] }>,
 ): Promise<void> {
   if (!pyodide) throw new Error('Python実行環境が初期化されていません。')
   activeExecutionId = executionId
@@ -115,6 +121,8 @@ async function runPython(
   outputLimitReached = false
   stdoutDecoder = new TextDecoder()
   stderrDecoder = new TextDecoder()
+  automaticInputs = null
+  capturedStdout = null
   tablePreviewBytes = 0
   tablePreviewCount = 0
   const startedAt = performance.now()
@@ -207,6 +215,11 @@ async function runPython(
       return true
     })
     pyodide.globals.set('__pystudio_input', (prompt: string) => {
+      if (automaticInputs !== null) {
+        const value = automaticInputs.shift()
+        if (value === undefined) throw new Error('自動入力テストに必要な入力値が不足しています。')
+        return Promise.resolve(value)
+      }
       const requestId = ++nextInputId
       post({ type: 'INPUT_REQUEST', executionId, requestId, prompt })
       post({ type: 'STATUS', status: 'waiting-input' })
@@ -247,7 +260,7 @@ _pystudio_plt.show = _pystudio_show
 
     await pyodide.runPythonAsync(PYTHON_DATAFRAME_PREVIEW_SETUP)
 
-    await pyodide.runPythonAsync(`
+    const executionSource = `
 import ast as _pystudio_ast
 import inspect as _pystudio_inspect
 
@@ -296,7 +309,27 @@ _pystudio_result = eval(
 )
 if _pystudio_inspect.isawaitable(_pystudio_result):
     await _pystudio_result
-`)
+`
+    if (inputTestCases) {
+      for (const [index, testCase] of inputTestCases.entries()) {
+        automaticInputs = [...testCase.inputs]
+        capturedStdout = ''
+        stdoutDecoder = new TextDecoder()
+        stderrDecoder = new TextDecoder()
+        await pyodide.runPythonAsync(executionSource)
+        flushOutputDecoders()
+        post({
+          type: 'INPUT_TEST_RESULT',
+          executionId,
+          index,
+          output: capturedStdout,
+        })
+      }
+      automaticInputs = null
+      capturedStdout = null
+    } else {
+      await pyodide.runPythonAsync(executionSource)
+    }
     post({
       type: 'COMPLETE',
       executionId,
@@ -311,6 +344,8 @@ if _pystudio_inspect.isawaitable(_pystudio_result):
     })
   } finally {
     flushOutputDecoders()
+    automaticInputs = null
+    capturedStdout = null
     activeExecutionId = undefined
     post({ type: 'STATUS', status: 'ready', message: 'Python Ready' })
   }
@@ -336,6 +371,6 @@ workerScope.addEventListener('message', (event: MessageEvent<WorkerRequest>) => 
     return
   }
   if (request.type === 'RUN') {
-    void runPython(request.executionId, request.activeFile, request.files)
+    void runPython(request.executionId, request.activeFile, request.files, request.inputTestCases)
   }
 })

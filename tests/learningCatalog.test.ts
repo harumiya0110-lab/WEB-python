@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { allLessons, learningCourses } from '../src/data/learningCatalog'
+import { pythonGlossary } from '../src/data/pythonGlossary'
 
 describe('Python learning curriculum', () => {
   it('has fourteen ordered courses and at least fifty unique lessons and quiz prompts', () => {
@@ -60,7 +61,28 @@ describe('Python learning curriculum', () => {
       }
       if (lesson.practice.inputGradingRule) {
         expect(lesson.practice.starter, lesson.id).toContain('input(')
+        if (lesson.practice.inputGradingRule.testCases) {
+          expect(lesson.practice.inputGradingRule.testCases.length, lesson.id).toBeGreaterThan(1)
+          for (const testCase of lesson.practice.inputGradingRule.testCases) {
+            expect(testCase.inputs.length, lesson.id).toBeGreaterThan(0)
+            expect(testCase.expectedOutput, lesson.id).toBeDefined()
+          }
+        }
       }
+    }
+  })
+
+  it('keeps glossary references valid and provides complete, searchable examples', () => {
+    const lessonIds = new Set(allLessons.map(({ id }) => id))
+    expect(new Set(pythonGlossary.map(({ term }) => term)).size).toBe(pythonGlossary.length)
+    for (const entry of pythonGlossary) {
+      expect(lessonIds.has(entry.lessonId), `${entry.term}: ${entry.lessonId}`).toBe(true)
+      expect(entry.reading, entry.term).toBeTruthy()
+      expect(entry.meaning, entry.term).toBeTruthy()
+      expect(entry.usage, entry.term).toBeTruthy()
+      expect(entry.exampleCode, entry.term).toBeTruthy()
+      expect(entry.exampleOutput, entry.term).toBeDefined()
+      expect(entry.category, entry.term).toBeTruthy()
     }
   })
 })

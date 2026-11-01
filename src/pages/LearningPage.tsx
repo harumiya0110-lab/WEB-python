@@ -18,9 +18,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { allLessons, firstLessonId, learningCourses, lessonMap } from '../data/learningCatalog'
+import { pythonGlossary } from '../data/pythonGlossary'
 import { usePythonRuntime } from '../hooks/usePythonRuntime'
 import {
   createPythonFunctionTestHarness,
+  gradePythonInputTests,
   getExpectedOutputForInputs,
   gradePythonFunctionTests,
   gradePythonOutput,
@@ -37,7 +39,7 @@ import {
 import { getDatabase } from '../services/database'
 import { saveProject } from '../services/localProjectService'
 import { useSettingsStore } from '../store/settingsStore'
-import type { LearningCourse, LearningLesson, LearningProgressState, LearningTerm, PythonFunctionTestCase } from '../types/learning'
+import type { LearningCourse, LearningInputTestCase, LearningLesson, LearningProgressState, LearningTerm, PythonFunctionTestCase } from '../types/learning'
 
 type LearningSection = 'study' | 'review' | 'glossary'
 type ScoreState = 'correct' | 'incorrect' | 'error' | null
@@ -56,30 +58,6 @@ const initialProgress: LearningProgressState = {
   solutionViewedExerciseIds: [],
   lastUpdatedAt: Date.now(),
 }
-
-const glossaryExtras: Array<{ term: string; reading: string; meaning: string; lessonId: string }> = [
-  { term: 'Python', reading: 'パイソン', meaning: '読みやすさを大切にしたプログラミング言語です。', lessonId: 'python-what-is-python' },
-  { term: 'プログラム', reading: 'ぷろぐらむ', meaning: 'コンピューターへの指示を並べたものです。', lessonId: 'python-what-is-python' },
-  { term: 'コード', reading: 'こーど', meaning: 'プログラムを書くための命令や文です。', lessonId: 'python-what-is-python' },
-  { term: '実行', reading: 'じっこう', meaning: '書いたプログラムを動かすことです。', lessonId: 'python-what-is-python' },
-  { term: '値', reading: 'あたい', meaning: '変数などに保存されるデータです。', lessonId: 'variables-intro' },
-  { term: 'str', reading: 'すとりんぐ', meaning: '文字列を表すデータ型です。', lessonId: 'types-and-conversion' },
-  { term: 'int', reading: 'いんと', meaning: '整数を表すデータ型です。', lessonId: 'types-and-conversion' },
-  { term: 'float', reading: 'ふろーと', meaning: '小数を表すデータ型です。', lessonId: 'user-input-input-float' },
-  { term: 'bool', reading: 'ぶーる', meaning: 'TrueかFalseのどちらかを表す型です。', lessonId: 'comparison-operators' },
-  { term: 'None', reading: 'なん', meaning: '値がないことを表す特別な値です。', lessonId: 'types-and-conversion' },
-  { term: 'elif', reading: 'えるいふ', meaning: '複数の条件を順に調べるときに使います。', lessonId: 'if-else-basics' },
-  { term: 'else', reading: 'えるす', meaning: 'ifの条件が成り立たない場合の処理です。', lessonId: 'if-else-basics' },
-  { term: 'continue', reading: 'こんてぃにゅー', meaning: '繰り返しの残りを飛ばして次の回へ進みます。', lessonId: 'loops-break-continue' },
-  { term: 'pass', reading: 'ぱす', meaning: '何もしない処理を置くための文です。', lessonId: 'object-oriented-class-instance' },
-  { term: 'from', reading: 'ふろむ', meaning: 'モジュールから特定の機能を読み込むときに使います。', lessonId: 'files-errors-modules-import-module' },
-  { term: 'as', reading: 'あず', meaning: '読み込んだモジュールなどに別名を付けます。', lessonId: 'data-analysis-pandas-dataframe' },
-  { term: 'finally', reading: 'ふぁいなりー', meaning: 'エラーの有無にかかわらず最後に実行する処理です。', lessonId: 'files-errors-modules-try-except' },
-  { term: 'raise', reading: 'れいず', meaning: 'プログラムからエラーを発生させる文です。', lessonId: 'files-errors-modules-try-except' },
-  { term: 'Series', reading: 'しりーず', meaning: 'pandasで使う、ラベル付きの1次元データです。', lessonId: 'data-analysis-pandas-dataframe' },
-  { term: 'read_csv', reading: 'りーどしーえすぶい', meaning: 'pandasでCSVファイルをDataFrameとして読み込みます。', lessonId: 'data-analysis-csv-basics' },
-  { term: 'pyplot', reading: 'ぱいぷろっと', meaning: 'Matplotlibでグラフを作るための機能です。', lessonId: 'data-analysis-matplotlib' },
-]
 
 function getCourseProgress(course: LearningCourse, completed: string[]) {
   const completeCount = course.lessons.filter((lesson) => completed.includes(lesson.id)).length
@@ -175,6 +153,7 @@ export function LearningPage() {
     hintLevel: number
     solutionViewed: boolean
     testCases: readonly PythonFunctionTestCase[]
+    inputTestCases: readonly LearningInputTestCase[]
     inputValues: string[]
     inputGradingRule: LearningLesson['practice']['inputGradingRule']
   }>({
@@ -185,6 +164,7 @@ export function LearningPage() {
     hintLevel: 0,
     solutionViewed: false,
     testCases: [],
+    inputTestCases: [],
     inputValues: [],
     inputGradingRule: undefined,
   })
@@ -387,6 +367,92 @@ export function LearningPage() {
     }).catch((error: unknown) => setStorageError(error instanceof Error ? error.message : '回答履歴を保存できませんでした。'))
   }, [refreshHistory])
 
+  const processInputTestResult = useCallback((lines: typeof output) => {
+    const runInfo = { ...runInfoRef.current }
+    if (runInfo.inputTestCases.length === 0) return false
+
+    const actualOutputs = lines
+      .filter((line) => line.channel === 'input-test-result')
+      .map((line) => line.text)
+    const stderr = lines.filter((line) => line.channel === 'stderr').map((line) => line.text).join('')
+    const runtimeError = lines.filter((line) => line.channel === 'error').map((line) => line.text).join('')
+    const isTimeout = stderr.includes('実行時間の上限')
+    if (runtimeError || stderr.includes('Traceback') || isTimeout) {
+      runKindRef.current = null
+      setExerciseOutput(outputFor(lines))
+      setExerciseScore('error')
+      setExerciseFeedback(isTimeout
+        ? '入力例の実行時間が上限に達しました。処理を短くしてもう一度試してください。'
+        : `${describeError(runtimeError || stderr)}\n${(runtimeError || stderr).slice(-500)}`)
+      void recordLearningAttempt({
+        lessonId: runInfo.lessonId,
+        exerciseId: runInfo.exerciseId,
+        submittedAnswer: runInfo.code,
+        result: isTimeout ? 'timeout' : 'error',
+        hintLevel: runInfo.hintLevel,
+        solutionViewed: runInfo.solutionViewed,
+      }).then(refreshHistory).catch((error: unknown) => setStorageError(error instanceof Error ? error.message : '回答履歴を保存できませんでした。'))
+      return true
+    }
+
+    if (actualOutputs.length !== runInfo.inputTestCases.length) {
+      runKindRef.current = null
+      setExerciseScore('error')
+      setExerciseFeedback(`入力例の実行結果が不足しています（${actualOutputs.length}/${runInfo.inputTestCases.length}件）。もう一度実行してください。`)
+      void recordLearningAttempt({
+        lessonId: runInfo.lessonId,
+        exerciseId: runInfo.exerciseId,
+        submittedAnswer: runInfo.code,
+        result: 'error',
+        hintLevel: runInfo.hintLevel,
+        solutionViewed: runInfo.solutionViewed,
+      }).then(refreshHistory).catch((error: unknown) => setStorageError(error instanceof Error ? error.message : '回答履歴を保存できませんでした。'))
+      return true
+    }
+
+    runKindRef.current = null
+    const grade = gradePythonInputTests(runInfo.inputTestCases, actualOutputs)
+    if (!grade) {
+      setExerciseScore('error')
+      setExerciseFeedback('入力例のテスト結果を読み取れませんでした。もう一度実行してください。')
+      return true
+    }
+    setExerciseOutput(actualOutputs.map((result, index) => `入力例 ${index + 1}: ${JSON.stringify(runInfo.inputTestCases[index]!.inputs)}\n${result || '（出力なし）'}`).join('\n\n'))
+    setExerciseScore(grade.correct ? 'correct' : 'incorrect')
+    setExerciseFeedback(grade.correct
+      ? `正解です。設定された入力例${grade.totalCount}件すべてに合格しました。`
+      : `入力例${grade.firstFailedCase}で結果が異なりました（${grade.passedCount}/${grade.totalCount}件合格）。入力: ${JSON.stringify(grade.failedCase?.inputs)}。期待値: ${grade.failedCase?.expected || '（何も表示しない）'}。実際の値: ${grade.failedCase?.actual || '（何も表示しない）'}。`)
+    void recordLearningAttempt({
+      lessonId: runInfo.lessonId,
+      exerciseId: runInfo.exerciseId,
+      submittedAnswer: runInfo.code,
+      result: grade.correct ? 'correct' : 'incorrect',
+      hintLevel: runInfo.hintLevel,
+      solutionViewed: runInfo.solutionViewed,
+    }).then(async () => {
+      setProgress((current) => {
+        const passed = grade.correct
+          ? [...new Set([...(current.practicePassedLessonIds ?? []), runInfo.lessonId])]
+          : current.practicePassedLessonIds ?? []
+        const completed = passed.includes(runInfo.lessonId) &&
+          (current.quizPassedLessonIds ?? []).includes(runInfo.lessonId)
+          ? [...new Set([...current.completedLessonIds, runInfo.lessonId])]
+          : current.completedLessonIds
+        return {
+          ...current,
+          practicePassedLessonIds: passed,
+          completedLessonIds: completed,
+          attemptedLessonIds: [...new Set([...current.attemptedLessonIds, runInfo.lessonId])],
+          startedLessonIds: [...new Set([...current.startedLessonIds, runInfo.lessonId])],
+          lastLessonId: runInfo.lessonId,
+          lastUpdatedAt: Date.now(),
+        }
+      })
+      await refreshHistory()
+    }).catch((error: unknown) => setStorageError(error instanceof Error ? error.message : '回答履歴を保存できませんでした。'))
+    return true
+  }, [refreshHistory])
+
   useEffect(() => {
     if (status === 'running' || status === 'waiting-input') {
       runStartedRef.current = true
@@ -395,9 +461,10 @@ export function LearningPage() {
     if (status !== 'ready' || !runStartedRef.current || !runKindRef.current) return
     runStartedRef.current = false
     const mode = runKindRef.current
+    if (mode === 'exercise' && processInputTestResult(output)) return
     runKindRef.current = null
     processRunResult(mode, output)
-  }, [output, processRunResult, status])
+  }, [output, processInputTestResult, processRunResult, status])
 
   const selectLesson = (lesson: LearningLesson, courseId: string) => {
     if (runKindRef.current) {
@@ -450,6 +517,7 @@ export function LearningPage() {
       hintLevel,
       solutionViewed: solutionVisible,
       testCases: testCases ?? [],
+      inputTestCases: [],
       inputValues: [],
       inputGradingRule: selectedLesson.practice.inputGradingRule,
     }
@@ -464,6 +532,38 @@ export function LearningPage() {
     runKindRef.current = null
     runStartedRef.current = false
     stop()
+  }
+
+  const beginInputTest = () => {
+    const testCases = selectedLesson.practice.inputGradingRule?.testCases ?? []
+    if (testCases.length === 0) return
+    clearOutput()
+    setExerciseOutput('')
+    setExerciseFeedback('')
+    setExerciseScore(null)
+    runStartedRef.current = false
+    runKindRef.current = 'exercise'
+    runInfoRef.current = {
+      lessonId: selectedLesson.id,
+      exerciseId: practiceExerciseId(selectedLesson.id),
+      expectedOutput: '',
+      code,
+      hintLevel,
+      solutionViewed: solutionVisible,
+      testCases: [],
+      inputTestCases: testCases,
+      inputValues: [],
+      inputGradingRule: selectedLesson.practice.inputGradingRule,
+    }
+    const started = run(
+      { 'lesson.py': code },
+      'lesson.py',
+      testCases.map(({ inputs }) => ({ inputs })),
+    )
+    if (!started) {
+      runKindRef.current = null
+      setExerciseFeedback(status === 'ready' ? '実行環境が準備できていません。少し待ってから再試行してください。' : 'Python環境の準備が完了してから、入力例テストを実行してください。')
+    }
   }
 
   const checkQuiz = () => {
@@ -534,13 +634,13 @@ export function LearningPage() {
           })
         }
       }
-      for (const term of glossaryExtras) {
+      for (const term of pythonGlossary) {
         const lesson = lessonMap.get(term.lessonId)
         if (lesson && !entries.has(term.term)) {
           entries.set(term.term, {
             ...term,
             courseId: lesson.courseId,
-            category: getGlossaryCategory(lesson.courseId),
+            category: term.category ?? getGlossaryCategory(lesson.courseId),
           })
         }
       }
@@ -799,7 +899,7 @@ export function LearningPage() {
                   <article className="info-block learning-exercise">
                     <div className="exercise-title"><Code2 size={17} /><h3>学習用コード練習</h3></div>
                     <p>{selectedLesson.practice.prompt}</p>
-                    {selectedLesson.practice.inputGradingRule && <p className="input-grading-note">input()に任意の値を入力して実行すると、その入力に合わせて結果を採点します。</p>}
+                    {selectedLesson.practice.inputGradingRule && <p className="input-grading-note">自分で入力して実行する方法と、複数の設定済み入力例で答え合わせする方法を選べます。</p>}
                     <Editor
                       height="260px"
                       language="python"
@@ -819,7 +919,12 @@ export function LearningPage() {
                     />
                     <span className="draft-status">学習用コードはレッスンごとに自動保存されます。通常プロジェクトには影響しません。</span>
                     <div className="practice-actions">
-                      <button type="button" className="primary-button" onClick={() => beginRun('exercise')} disabled={status !== 'ready'}><CirclePlay size={16} />実行して答え合わせ</button>
+                      {selectedLesson.practice.inputGradingRule?.testCases?.length
+                        ? <>
+                          <button type="button" className="secondary-button" onClick={() => beginRun('exercise')} disabled={status !== 'ready'}><CirclePlay size={16} />自分で入力して実行</button>
+                          <button type="button" className="primary-button" onClick={beginInputTest} disabled={status !== 'ready'}><CirclePlay size={16} />入力例で答え合わせ</button>
+                        </>
+                        : <button type="button" className="primary-button" onClick={() => beginRun('exercise')} disabled={status !== 'ready'}><CirclePlay size={16} />実行して答え合わせ</button>}
                       {status === 'running' && <button type="button" className="ghost-button" onClick={stopRun}><Square size={15} />停止</button>}
                       <button type="button" className="ghost-button" onClick={() => {
                         if (window.confirm('このレッスンの練習コードを初期状態に戻しますか？')) setCode(selectedLesson.practice.starter)
@@ -911,6 +1016,7 @@ export function LearningPage() {
                   {entry.usage && <p><strong>使いどころ:</strong> {entry.usage}</p>}
                   {entry.exampleCode && <pre>{entry.exampleCode}</pre>}
                   {entry.exampleOutput !== undefined && <p><strong>実行結果:</strong> <code>{entry.exampleOutput}</code></p>}
+                  {entry.relatedTerms && entry.relatedTerms.length > 0 && <p><strong>関連用語:</strong> {entry.relatedTerms.join('、')}</p>}
                   <button type="button" className="ghost-button" onClick={() => openLesson(entry.lessonId)}>関連レッスンへ<ChevronRight size={15} /></button>
                 </article>
               ))}
