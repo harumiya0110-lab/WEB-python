@@ -88,7 +88,13 @@ describe('settings store', () => {
   })
 
   it('resets editor settings or all settings without touching other stored user data', () => {
-    localStorageMock.setItem('pystudio-projects', 'keep-existing-projects')
+    const preservedData = [
+      ['pystudio-projects', 'keep-existing-projects'],
+      ['pystudio-templates', 'keep-existing-templates'],
+      ['pystudio-learning-progress', 'keep-existing-learning-progress'],
+      ['pystudio-learning-code', 'keep-existing-learning-code'],
+    ] as const
+    for (const [key, value] of preservedData) localStorageMock.setItem(key, value)
     const state = useSettingsStore.getState()
     state.setTheme('dark')
     state.setEditorSettings({ fontSize: 21, showMinimap: true, wordWrap: 'on' })
@@ -100,12 +106,12 @@ describe('settings store', () => {
       ...DEFAULT_SETTINGS,
       theme: 'dark',
     })
-    expect(localStorageMock.getItem('pystudio-projects')).toBe('keep-existing-projects')
+    for (const [key, value] of preservedData) expect(localStorageMock.getItem(key)).toBe(value)
 
     useSettingsStore.getState().setTheme('dark')
     useSettingsStore.getState().resetSettings('all')
     expect(useSettingsStore.getState()).toMatchObject(DEFAULT_SETTINGS)
-    expect(localStorageMock.getItem('pystudio-projects')).toBe('keep-existing-projects')
+    for (const [key, value] of preservedData) expect(localStorageMock.getItem(key)).toBe(value)
   })
 
   it('restores partial or invalid saved data safely during rehydration', async () => {
