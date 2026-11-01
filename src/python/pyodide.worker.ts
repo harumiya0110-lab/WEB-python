@@ -21,6 +21,8 @@ let outputCharacters = 0
 let outputLimitReached = false
 let tablePreviewBytes = 0
 let tablePreviewCount = 0
+let stdoutDecoder = new TextDecoder()
+let stderrDecoder = new TextDecoder()
 const inputResolvers = new Map<number, (value: string) => void>()
 
 function containsControlCharacter(value: string): boolean {
@@ -59,6 +61,20 @@ function writeOutput(type: 'STDOUT' | 'STDERR', text: string): void {
   }
 }
 
+function writeOutputBytes(type: 'STDOUT' | 'STDERR', buffer: Uint8Array): number {
+  const decoder = type === 'STDOUT' ? stdoutDecoder : stderrDecoder
+  const text = decoder.decode(buffer, { stream: true })
+  if (text) writeOutput(type, text)
+  return buffer.length
+}
+
+function flushOutputDecoders(): void {
+  const stdout = stdoutDecoder.decode()
+  const stderr = stderrDecoder.decode()
+  if (stdout) writeOutput('STDOUT', stdout)
+  if (stderr) writeOutput('STDERR', stderr)
+}
+
 function normalizeProjectPath(path: string): string {
   const parts = path.split('/')
   if (
@@ -82,8 +98,8 @@ async function initializeRuntime(): Promise<void> {
       `${indexURL}pyodide.mjs`
     )) as typeof import('pyodide')
     pyodide = await pyodideModule.loadPyodide({ indexURL })
-    pyodide.setStdout({ batched: (text) => writeOutput('STDOUT', text) })
-    pyodide.setStderr({ batched: (text) => writeOutput('STDERR', text) })
+    pyodide.setStdout({ write: (buffer) => writeOutputBytes('STDOUT', buffer) })
+    pyodide.setStderr({ write: (buffer) => writeOutputBytes('STDERR', buffer) })
   }
   post({ type: 'STATUS', status: 'ready', message: 'Python Ready' })
 }
@@ -97,6 +113,8 @@ async function runPython(
   activeExecutionId = executionId
   outputCharacters = 0
   outputLimitReached = false
+  stdoutDecoder = new TextDecoder()
+  stderrDecoder = new TextDecoder()
   tablePreviewBytes = 0
   tablePreviewCount = 0
   const startedAt = performance.now()
@@ -292,6 +310,7 @@ if _pystudio_inspect.isawaitable(_pystudio_result):
       durationMs: performance.now() - startedAt,
     })
   } finally {
+    flushOutputDecoders()
     activeExecutionId = undefined
     post({ type: 'STATUS', status: 'ready', message: 'Python Ready' })
   }

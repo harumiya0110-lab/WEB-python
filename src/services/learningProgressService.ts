@@ -86,21 +86,25 @@ export async function recordLearningAttempt(
     }
     await historyStore.add({ ...attempt, id: crypto.randomUUID(), attemptedAt: now })
     const isCorrect = attempt.result === 'correct'
+    const isIncorrect = attempt.result === 'incorrect' || attempt.result === 'partial'
     const attempts = (review?.attempts ?? 0) + 1
-    const incorrectAttempts = (review?.incorrectAttempts ?? 0) + (isCorrect ? 0 : 1)
-    const intervalDays = isCorrect
-      ? incorrectAttempts === 0 ? 7 : attempts >= 4 ? 7 : 3
-      : 1
+    const incorrectAttempts = (review?.incorrectAttempts ?? 0) + (isIncorrect ? 1 : 0)
+    const correctStreak = isCorrect ? (review?.correctStreak ?? 0) + 1 : isIncorrect ? 0 : review?.correctStreak ?? 0
+    const intervalDays = isCorrect ? correctStreak >= 3 ? 14 : correctStreak === 2 ? 7 : 3 : 1
+    const dueAt = isCorrect || isIncorrect
+      ? Date.now() + intervalDays * 24 * 60 * 60 * 1000
+      : review?.dueAt ?? now + 24 * 60 * 60 * 1000
     await reviewStore.put({
       exerciseId: attempt.exerciseId,
       lessonId: attempt.lessonId,
       attempts,
       incorrectAttempts,
-      dueAt: Date.now() + intervalDays * 24 * 60 * 60 * 1000,
+      dueAt,
       lastAttemptAt: now,
       correctAt: isCorrect ? now : (review?.correctAt ?? null),
       hintLevel: Math.max(review?.hintLevel ?? 0, attempt.hintLevel),
       solutionViewed: Boolean(review?.solutionViewed || attempt.solutionViewed),
+      correctStreak,
     })
     await transaction.done
   } catch (error) {
@@ -126,6 +130,7 @@ export async function listLearningReviews(): Promise<Array<{
   correctAt: number | null
   hintLevel: number
   solutionViewed: boolean
+  correctStreak?: number
 }>> {
   try {
     return await (await getDatabase()).getAll('learningReview')

@@ -21,6 +21,7 @@ import { allLessons, firstLessonId, learningCourses, lessonMap } from '../data/l
 import { usePythonRuntime } from '../hooks/usePythonRuntime'
 import {
   createPythonFunctionTestHarness,
+  getExpectedOutputForInputs,
   gradePythonFunctionTests,
   gradePythonOutput,
 } from '../python/learningGrading'
@@ -36,11 +37,11 @@ import {
 import { getDatabase } from '../services/database'
 import { saveProject } from '../services/localProjectService'
 import { useSettingsStore } from '../store/settingsStore'
-import type { LearningCourse, LearningLesson, LearningProgressState } from '../types/learning'
+import type { LearningCourse, LearningLesson, LearningProgressState, LearningTerm, PythonFunctionTestCase } from '../types/learning'
 
 type LearningSection = 'study' | 'review' | 'glossary'
 type ScoreState = 'correct' | 'incorrect' | 'error' | null
-const REVIEW_TIMESTAMP = Date.now()
+const practiceExerciseId = (lessonId: string) => `${lessonId}:practice`
 
 const initialProgress: LearningProgressState = {
   lastLessonId: null,
@@ -93,6 +94,20 @@ function outputFor(lines: Array<{ channel: string; text: string }>): string {
   return lines.filter((line) => line.channel === 'stdout').map((line) => line.text).join('')
 }
 
+function getGlossaryCategory(courseId: string): string {
+  if (courseId === 'python-intro') return '基本'
+  if (courseId === 'variable-types') return '変数・データ型'
+  if (courseId === 'operators') return '演算子'
+  if (courseId === 'conditionals') return '条件分岐'
+  if (courseId === 'loops') return '繰り返し'
+  if (courseId === 'sequences' || courseId === 'dictionary-strings') return 'リスト・辞書'
+  if (courseId === 'functions') return '関数'
+  if (courseId === 'object-oriented') return 'クラス'
+  if (courseId === 'files-errors-modules') return 'ファイル操作・例外処理'
+  if (courseId === 'data-analysis') return 'データ分析'
+  return '実践・発展'
+}
+
 function describeError(text: string): string {
   const explanations: Array<[string, string]> = [
     ['SyntaxError', '文法の書き方を確認しましょう。かっこや引用符、コロンの閉じ忘れがよくある原因です。'],
@@ -123,6 +138,7 @@ export function LearningPage() {
   const [draftLoadedId, setDraftLoadedId] = useState('')
   const [selectedQuizAnswer, setSelectedQuizAnswer] = useState('')
   const [quizFeedback, setQuizFeedback] = useState('')
+  const [quizExplanationVisible, setQuizExplanationVisible] = useState(false)
   const [exerciseFeedback, setExerciseFeedback] = useState('')
   const [exerciseScore, setExerciseScore] = useState<ScoreState>(null)
   const [hintLevel, setHintLevel] = useState(0)
@@ -135,6 +151,7 @@ export function LearningPage() {
   const [attempts, setAttempts] = useState<Awaited<ReturnType<typeof listLearningAttempts>>>([])
   const [reviews, setReviews] = useState<Awaited<ReturnType<typeof listLearningReviews>>>([])
   const [notes, setNotes] = useState('')
+  const [reviewNow, setReviewNow] = useState(() => Date.now())
   const { fontSize, theme } = useSettingsStore()
   const {
     output,
@@ -149,7 +166,28 @@ export function LearningPage() {
   } = usePythonRuntime()
   const runKindRef = useRef<'sample' | 'exercise' | null>(null)
   const runStartedRef = useRef(false)
-  const runInfoRef = useRef({ lessonId: '', expectedOutput: '', code: '', hintLevel: 0, solutionViewed: false, testCaseCount: 0 })
+  const quizSubmittedRef = useRef(false)
+  const runInfoRef = useRef<{
+    lessonId: string
+    exerciseId: string
+    expectedOutput: string
+    code: string
+    hintLevel: number
+    solutionViewed: boolean
+    testCases: readonly PythonFunctionTestCase[]
+    inputValues: string[]
+    inputGradingRule: LearningLesson['practice']['inputGradingRule']
+  }>({
+    lessonId: '',
+    exerciseId: '',
+    expectedOutput: '',
+    code: '',
+    hintLevel: 0,
+    solutionViewed: false,
+    testCases: [],
+    inputValues: [],
+    inputGradingRule: undefined,
+  })
 
   const selectedLesson = useMemo<LearningLesson>(
     () => lessonMap.get(selectedLessonId) ?? allLessons[0]!,
@@ -162,14 +200,30 @@ export function LearningPage() {
   )
   const allAttempts = attempts.length
   const correctAttempts = attempts.filter((attempt) => attempt.result === 'correct').length
-  const gradedAttempts = attempts.filter((attempt) => attempt.result !== 'error').length
+  const gradedAttempts = attempts.filter((attempt) =>
+    attempt.result === 'correct' || attempt.result === 'incorrect' || attempt.result === 'partial',
+  ).length
   const accuracy = gradedAttempts ? Math.round((correctAttempts / gradedAttempts) * 100) : 0
-  const dueReviews = reviews.filter((review) => review.incorrectAttempts > 0 && review.dueAt <= REVIEW_TIMESTAMP)
+  const incorrectAttempts = attempts.filter((attempt) => attempt.result === 'incorrect' || attempt.result === 'partial').length
+  const executionErrors = attempts.filter((attempt) => attempt.result === 'error' || attempt.result === 'timeout').length
+  const dueReviews = reviews.filter((review) => review.incorrectAttempts > 0 && review.dueAt <= reviewNow)
 
   const refreshHistory = useCallback(async () => {
     const [nextAttempts, nextReviews] = await Promise.all([listLearningAttempts(), listLearningReviews()])
     setAttempts(nextAttempts)
     setReviews(nextReviews)
+  }, [])
+
+  useEffect(() => {
+    const updateReviewClock = () => setReviewNow(Date.now())
+    const timer = window.setInterval(updateReviewClock, 60_000)
+    window.addEventListener('focus', updateReviewClock)
+    document.addEventListener('visibilitychange', updateReviewClock)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', updateReviewClock)
+      document.removeEventListener('visibilitychange', updateReviewClock)
+    }
   }, [])
 
   useEffect(() => {
@@ -249,50 +303,63 @@ export function LearningPage() {
     const runInfo = { ...runInfoRef.current }
     const stdout = outputFor(lines)
     const stderr = lines.filter((line) => line.channel === 'stderr').map((line) => line.text).join('')
+    const runtimeError = lines.filter((line) => line.channel === 'error').map((line) => line.text).join('')
     if (mode === 'sample') {
-      setSampleOutput(stdout || (stderr ? 'エラーが発生しました。' : '出力はありません。'))
+      setSampleOutput(stdout || (stderr || runtimeError ? `エラーが発生しました。\n${runtimeError || stderr}` : '出力はありません。'))
       return
     }
-    if (stderr.includes('Traceback') || stderr.includes('実行時間の上限')) {
+    const isTimeout = stderr.includes('実行時間の上限')
+    if (runtimeError || stderr.includes('Traceback') || isTimeout) {
       setExerciseOutput(stdout)
-      const message = stderr.includes('実行時間の上限')
+      const errorText = runtimeError || stderr
+      const message = isTimeout
         ? '実行時間の上限に達しました。処理を短くしてもう一度試してください。'
-        : `${describeError(stderr)}\n${stderr.slice(-500)}`
+        : `${describeError(errorText)}\n${errorText.slice(-500)}`
       setExerciseScore('error')
       setExerciseFeedback(message)
       void recordLearningAttempt({
         lessonId: runInfo.lessonId,
-        exerciseId: runInfo.lessonId,
+        exerciseId: runInfo.exerciseId,
         submittedAnswer: runInfo.code,
-        result: 'error',
+        result: isTimeout ? 'timeout' : 'error',
         hintLevel: runInfo.hintLevel,
         solutionViewed: runInfo.solutionViewed,
       }).then(refreshHistory).catch((error: unknown) => setStorageError(error instanceof Error ? error.message : '回答履歴を保存できませんでした。'))
       return
     }
-    const functionGrade = runInfo.testCaseCount > 0
-      ? gradePythonFunctionTests(stdout, runInfo.testCaseCount)
+    const functionGrade = runInfo.testCases.length > 0
+      ? gradePythonFunctionTests(stdout, runInfo.testCases)
       : null
-    if (runInfo.testCaseCount > 0 && !functionGrade) {
+    if (runInfo.testCases.length > 0 && !functionGrade) {
       setExerciseOutput(stdout)
       setExerciseScore('error')
       setExerciseFeedback('テスト結果を読み取れませんでした。コードを確認して、もう一度実行してください。')
       return
     }
     setExerciseOutput(functionGrade?.userOutput ?? stdout)
-    const outputGrade = gradePythonOutput(runInfo.expectedOutput, stdout)
-    const correct = functionGrade?.correct ?? outputGrade.correct
+    const inputExpectedOutput = runInfo.inputGradingRule && runInfo.inputValues.length > 0
+      ? getExpectedOutputForInputs(runInfo.inputGradingRule, runInfo.inputValues)
+      : null
+    const expectedOutput = runInfo.inputGradingRule ? inputExpectedOutput ?? '' : runInfo.expectedOutput
+    const outputGrade = gradePythonOutput(expectedOutput, stdout)
+    const correct = functionGrade
+      ? functionGrade.correct
+      : (!runInfo.inputGradingRule || inputExpectedOutput !== null) && outputGrade.correct
     setExerciseScore(correct ? 'correct' : 'incorrect')
     setExerciseFeedback(correct
       ? functionGrade
         ? `正解です。${functionGrade.passedCount}/${functionGrade.totalCount}件のテストケースに合格しました。`
         : '正解です。実行結果が期待する出力と一致しました。'
       : functionGrade
-        ? `テストケース${functionGrade.firstFailedCase}で期待した戻り値と異なりました（${functionGrade.passedCount}/${functionGrade.totalCount}件正解）。引数の処理を確認しましょう。`
-        : `出力が期待した結果と異なります。期待する結果: ${outputGrade.expected || '（何も表示しない）'}。実際の出力: ${outputGrade.actual || '（何も表示しない）'}。出力の順番や値を確認しましょう。`)
+        ? functionGrade.failedCase?.error
+          ? `テストケース${functionGrade.firstFailedCase}でエラーが発生しました（${functionGrade.passedCount}/${functionGrade.totalCount}件合格）。入力: ${JSON.stringify(functionGrade.failedCase.arguments)}。${functionGrade.failedCase.error}`
+          : `テストケース${functionGrade.firstFailedCase}で結果が異なりました（${functionGrade.passedCount}/${functionGrade.totalCount}件合格）。入力: ${JSON.stringify(functionGrade.failedCase?.arguments)}。期待値: ${JSON.stringify(functionGrade.failedCase?.expected)}。実際の値: ${JSON.stringify(functionGrade.failedCase?.actual)}。入力の処理を確認しましょう。`
+        : runInfo.inputGradingRule && inputExpectedOutput === null
+          ? 'input()の値を受け取れませんでした。入力欄から値を送信して、もう一度実行してください。'
+          : `出力が期待した結果と異なります。期待する結果: ${outputGrade.expected || '（何も表示しない）'}。実際の出力: ${outputGrade.actual || '（何も表示しない）'}。出力の順番や値を確認しましょう。`)
     void recordLearningAttempt({
       lessonId: runInfo.lessonId,
-      exerciseId: runInfo.lessonId,
+      exerciseId: runInfo.exerciseId,
       submittedAnswer: runInfo.code,
       result: correct ? 'correct' : 'incorrect',
       hintLevel: runInfo.hintLevel,
@@ -343,6 +410,8 @@ export function LearningPage() {
     setDraftLoadedId('')
     setSelectedQuizAnswer('')
     setQuizFeedback('')
+    setQuizExplanationVisible(false)
+    quizSubmittedRef.current = false
     setExerciseFeedback('')
     setExerciseScore(null)
     setHintLevel(0)
@@ -375,11 +444,14 @@ export function LearningPage() {
     runKindRef.current = mode
     runInfoRef.current = {
       lessonId: selectedLesson.id,
+      exerciseId: practiceExerciseId(selectedLesson.id),
       expectedOutput: selectedLesson.practice.expectedOutput,
       code: source,
       hintLevel,
       solutionViewed: solutionVisible,
-      testCaseCount: testCases?.length ?? 0,
+      testCases: testCases ?? [],
+      inputValues: [],
+      inputGradingRule: selectedLesson.practice.inputGradingRule,
     }
     const started = run({ 'lesson.py': runnableSource }, 'lesson.py')
     if (!started) {
@@ -395,10 +467,13 @@ export function LearningPage() {
   }
 
   const checkQuiz = () => {
+    if (!selectedQuizAnswer || quizSubmittedRef.current) return
+    quizSubmittedRef.current = true
     const correct = selectedQuizAnswer === selectedLesson.quiz.answer
     setQuizFeedback(correct
       ? `正解です。${selectedLesson.quiz.explanation}`
-      : `不正解です。正解は「${selectedLesson.quiz.answer}」です。${selectedLesson.quiz.explanation}`)
+      : '今回は不正解です。ヒントを確認して、もう一度考えてみましょう。')
+    setQuizExplanationVisible(false)
     void recordLearningAttempt({
       lessonId: selectedLesson.id,
       exerciseId: selectedLesson.quiz.id,
@@ -426,6 +501,13 @@ export function LearningPage() {
     }).catch((error: unknown) => setStorageError(error instanceof Error ? error.message : 'クイズ履歴を保存できませんでした。'))
   }
 
+  const retryQuiz = () => {
+    quizSubmittedRef.current = false
+    setSelectedQuizAnswer('')
+    setQuizFeedback('')
+    setQuizExplanationVisible(false)
+  }
+
   const toggleFavorite = async () => {
     const current = progress.favoriteLessonIds ?? []
     const favorites = current.includes(selectedLesson.id)
@@ -440,11 +522,16 @@ export function LearningPage() {
   }
 
   const glossaryEntries = useMemo(() => {
-    const entries = new Map<string, { term: string; reading: string; meaning: string; lessonId: string; courseId: string }>()
+    const entries = new Map<string, LearningTerm & { lessonId: string; courseId: string }>()
     for (const course of learningCourses) {
       for (const lesson of course.lessons) {
         for (const term of lesson.terms) {
-          if (!entries.has(term.term)) entries.set(term.term, { ...term, lessonId: lesson.id, courseId: course.id })
+          if (!entries.has(term.term)) entries.set(term.term, {
+            ...term,
+            lessonId: lesson.id,
+            courseId: course.id,
+            category: getGlossaryCategory(course.id),
+          })
         }
       }
       for (const term of glossaryExtras) {
@@ -453,12 +540,13 @@ export function LearningPage() {
           entries.set(term.term, {
             ...term,
             courseId: lesson.courseId,
+            category: getGlossaryCategory(lesson.courseId),
           })
         }
       }
     }
     return [...entries.values()].filter((entry) =>
-      `${entry.term} ${entry.reading} ${entry.meaning}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
+      `${entry.term} ${entry.reading} ${entry.meaning} ${entry.usage ?? ''} ${entry.category ?? ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
     )
   }, [query])
 
@@ -468,7 +556,8 @@ export function LearningPage() {
       .sort((left, right) => left.dueAt - right.dueAt)
       .filter((review) => {
         const lesson = lessonMap.get(review.lessonId)
-        return lesson && `${lesson.title} ${lesson.summary}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())
+        const prompt = lesson && (review.exerciseId === lesson.quiz.id ? lesson.quiz.question : lesson.practice.title)
+        return lesson && `${prompt} ${lesson.title} ${lesson.summary}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())
       })
   }, [query, reviews])
 
@@ -477,7 +566,10 @@ export function LearningPage() {
     [progress.completedLessonIds],
   )
   const currentIndex = currentCourse.lessons.findIndex((lesson) => lesson.id === selectedLesson.id)
-  const recommendedLesson = allLessons.find((lesson) => !progress.completedLessonIds.includes(lesson.id)) ?? allLessons[0]!
+  const allLessonsCompleted = allLessons.every((lesson) => progress.completedLessonIds.includes(lesson.id))
+  const recommendedLesson = allLessonsCompleted
+    ? lessonMap.get('practical-programming-calculator') ?? allLessons[0]!
+    : allLessons.find((lesson) => !progress.completedLessonIds.includes(lesson.id))!
   const previousLesson = currentCourse.lessons[currentIndex - 1]
   const nextLesson = currentCourse.lessons[currentIndex + 1]
   const completionLabel = progress.completedLessonIds.includes(selectedLesson.id)
@@ -486,6 +578,7 @@ export function LearningPage() {
 
   const submitRuntimeInput = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (runKindRef.current === 'exercise') runInfoRef.current.inputValues.push(inputValue)
     submitInput(inputValue)
     setInputValue('')
   }
@@ -536,9 +629,21 @@ export function LearningPage() {
     }
   }
 
-  const openReview = (lessonId: string) => {
-    const lesson = lessonMap.get(lessonId)
-    if (lesson) selectLesson(lesson, lesson.courseId)
+  const openReview = (review: (typeof reviews)[number]) => {
+    const lesson = lessonMap.get(review.lessonId)
+    if (!lesson) return
+    const isQuiz = review.exerciseId === lesson.quiz.id
+    selectLesson(lesson, lesson.courseId)
+    window.setTimeout(() => {
+      document.querySelector(isQuiz ? '.learning-quiz' : '.learning-exercise')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 0)
+  }
+
+  const openLesson = (lessonId: string | null | undefined) => {
+    const lesson = lessonId ? lessonMap.get(lessonId) : undefined
+    const target = lesson ?? lessonMap.get(firstLessonId)
+    if (target) selectLesson(target, target.courseId)
   }
 
   return (
@@ -595,9 +700,10 @@ export function LearningPage() {
                   <h1>学習ダッシュボード</h1>
                   <p>{progress.lastLessonId ? `前回の学習: ${lessonMap.get(progress.lastLessonId)?.title ?? selectedLesson.title}` : '最初のレッスンから自分のペースで学べます。'}</p>
                 </div>
-                <button type="button" className="primary-button subtle" onClick={() => openReview(dueReviews[0]?.lessonId ?? progress.lastLessonId ?? firstLessonId)}>
+                <button type="button" className="primary-button subtle" onClick={() => openLesson(progress.lastLessonId)}>
                   前回の続きから学ぶ
                 </button>
+                {dueReviews.length > 0 && <button type="button" className="ghost-button" onClick={() => setSection('review')}>復習問題へ</button>}
               </div>
               {progress.startedLessonIds.length === 0 && (
                 <div className="learning-start-guide">
@@ -608,14 +714,18 @@ export function LearningPage() {
               )}
               <div className="stats-grid">
                 <StatCard label="完了レッスン" value={`${progress.completedLessonIds.length}/${allLessons.length}`} />
-                <StatCard label="問題への挑戦" value={`${allAttempts}`} />
+                <StatCard label="開始したレッスン" value={`${progress.startedLessonIds.length}`} />
+                <StatCard label="挑戦回数" value={`${allAttempts}`} />
                 <StatCard label="正解した回答" value={`${correctAttempts}`} />
+                <StatCard label="不正解" value={`${incorrectAttempts}`} />
+                <StatCard label="実行エラー" value={`${executionErrors}`} />
                 <StatCard label="正答率" value={`${accuracy}%`} />
                 <StatCard label="復習待ち" value={`${dueReviews.length}`} />
+                <StatCard label="お気に入り" value={`${progress.favoriteLessonIds?.length ?? 0}`} />
               </div>
               <article className="recommended-lesson">
-                <div><span className="section-kicker">おすすめの次のレッスン</span><strong>{recommendedLesson.title}</strong><p>{recommendedLesson.summary}</p></div>
-                <button type="button" className="secondary-button" onClick={() => selectLesson(recommendedLesson, recommendedLesson.courseId)}>学習を始める<ChevronRight size={15} /></button>
+                <div><span className="section-kicker">{allLessonsCompleted ? '次のステップ' : 'おすすめの次のレッスン'}</span><strong>{allLessonsCompleted ? '基礎レッスンを完了しました' : recommendedLesson.title}</strong><p>{allLessonsCompleted ? '実践プログラミングや応用課題で、学んだ文法を組み合わせてみましょう。' : recommendedLesson.summary}</p></div>
+                <button type="button" className="secondary-button" onClick={() => selectLesson(recommendedLesson, recommendedLesson.courseId)}>{allLessonsCompleted ? '実践課題を開く' : '学習を始める'}<ChevronRight size={15} /></button>
               </article>
             </section>
 
@@ -635,8 +745,16 @@ export function LearningPage() {
                 <div className="lesson-copy">
                   <article className="info-block">
                     <h3>今回学ぶこと</h3>
+                    <p><strong>事前に必要な知識:</strong> {selectedLesson.prerequisites?.length
+                      ? selectedLesson.prerequisites.map((id) => lessonMap.get(id)?.title ?? id).join('、')
+                      : '特にありません。初めての方もここから始められます。'}</p>
                     <p>{selectedLesson.summary}</p>
+                    <p>{selectedLesson.explanation}</p>
                     <ul>{selectedLesson.objective.map((objective) => <li key={objective}>{objective}</li>)}</ul>
+                  </article>
+                  <article className="info-block">
+                    <h3>文法の基本形</h3>
+                    <pre>{selectedLesson.syntax}</pre>
                   </article>
                   <article className="info-block">
                     <h3>重要なポイント</h3>
@@ -645,13 +763,18 @@ export function LearningPage() {
                   <article className="info-block">
                     <h3>用語の説明</h3>
                     <div className="term-list">
-                      {selectedLesson.terms.map((term) => <div key={term.term} className="term-item"><strong>{term.term}</strong><span>{term.reading}</span><p>{term.meaning}</p></div>)}
+                      {selectedLesson.terms.map((term) => <div key={term.term} className="term-item"><strong>{term.term}</strong><span>{term.reading}</span><p>{term.meaning}</p>{term.usage && <small>{term.usage}</small>}</div>)}
                     </div>
                   </article>
                   <article className="info-block">
                     <h3>サンプルコード</h3>
                     <pre>{selectedLesson.sampleCode}</pre>
                     <p>実行結果の例: <code>{selectedLesson.expectedOutput}</code></p>
+                    <ol className="sample-line-explanations">
+                      {(selectedLesson.sampleLineExplanations ?? selectedLesson.sampleCode.split('\n').map(() => 'この行を実行します。')).map((explanation, lineIndex) => (
+                        <li key={`${lineIndex}-${explanation}`}><code>{lineIndex + 1}行目</code> {explanation}</li>
+                      ))}
+                    </ol>
                     <div className="sample-actions">
                       <button type="button" className="secondary-button" onClick={() => beginRun('sample')} disabled={status !== 'ready'}><CirclePlay size={16} />サンプルを実行</button>
                       {status === 'running' && <button type="button" className="ghost-button" onClick={stopRun}><Square size={15} />停止</button>}
@@ -661,6 +784,10 @@ export function LearningPage() {
                   <article className="info-block">
                     <h3>よくある間違い</h3>
                     <ul>{selectedLesson.commonMistakes.map((mistake) => <li key={mistake}>{mistake}</li>)}</ul>
+                  </article>
+                  <article className="info-block next-step-block">
+                    <h3>次に学ぶこと</h3>
+                    <p>{selectedLesson.nextStep}</p>
                   </article>
                   <article className="info-block">
                     <h3>自分用メモ</h3>
@@ -672,6 +799,7 @@ export function LearningPage() {
                   <article className="info-block learning-exercise">
                     <div className="exercise-title"><Code2 size={17} /><h3>学習用コード練習</h3></div>
                     <p>{selectedLesson.practice.prompt}</p>
+                    {selectedLesson.practice.inputGradingRule && <p className="input-grading-note">input()に任意の値を入力して実行すると、その入力に合わせて結果を採点します。</p>}
                     <Editor
                       height="260px"
                       language="python"
@@ -723,13 +851,15 @@ export function LearningPage() {
                       <legend className="visually-hidden">回答を選択</legend>
                       {selectedLesson.quiz.choices.map((choice) => (
                         <label key={choice} className="quiz-choice">
-                          <input type="radio" name={`quiz-${selectedLesson.quiz.id}`} value={choice} checked={selectedQuizAnswer === choice} onChange={() => { setSelectedQuizAnswer(choice); setQuizFeedback('') }} />
+                          <input type="radio" name={`quiz-${selectedLesson.quiz.id}`} value={choice} checked={selectedQuizAnswer === choice} onChange={() => { quizSubmittedRef.current = false; setSelectedQuizAnswer(choice); setQuizFeedback(''); setQuizExplanationVisible(false) }} />
                           <span>{choice}</span>
                         </label>
                       ))}
                     </fieldset>
-                    <button type="button" className="secondary-button" onClick={checkQuiz} disabled={!selectedQuizAnswer}>クイズを採点</button>
-                    {quizFeedback && <div className={`result-box ${selectedQuizAnswer === selectedLesson.quiz.answer ? 'correct' : 'incorrect'}`} role="status"><span>{quizFeedback}</span></div>}
+                    <button type="button" className="secondary-button" onClick={checkQuiz} disabled={!selectedQuizAnswer || Boolean(quizFeedback)}>クイズを採点</button>
+                    {quizFeedback && <button type="button" className="ghost-button" onClick={retryQuiz}>もう一度挑戦</button>}
+                    {quizFeedback && <button type="button" className="ghost-button" onClick={() => setQuizExplanationVisible((visible) => !visible)}>{quizExplanationVisible ? '解説を閉じる' : '解説を表示'}</button>}
+                    {quizFeedback && <div className={`result-box ${selectedQuizAnswer === selectedLesson.quiz.answer ? 'correct' : 'incorrect'}`} role="status"><span>{quizFeedback}{quizExplanationVisible && ` 正解: ${selectedLesson.quiz.answer}。${selectedLesson.quiz.choiceExplanations?.[selectedQuizAnswer] ?? selectedLesson.quiz.explanation}`}</span></div>}
                   </article>
                 </aside>
               </div>
@@ -750,7 +880,19 @@ export function LearningPage() {
                 {filteredReviews.map((review) => {
                   const lesson = lessonMap.get(review.lessonId)
                   if (!lesson) return null
-                  return <article className="review-card" key={review.exerciseId}><div><strong>{lesson.title}</strong><p>{lesson.summary}</p><small>{review.incorrectAttempts}回間違い · {review.dueAt <= REVIEW_TIMESTAMP ? '復習できます' : `復習予定: ${new Date(review.dueAt).toLocaleDateString('ja-JP')}`}</small></div><button type="button" className="secondary-button" onClick={() => openReview(lesson.id)}>再挑戦</button></article>
+                  const quizReview = review.exerciseId === lesson.quiz.id
+                  const course = learningCourses.find((item) => item.id === lesson.courseId)
+                  const lastAttempt = new Date(review.lastAttemptAt).toLocaleString('ja-JP')
+                  const dueAt = new Date(review.dueAt).toLocaleString('ja-JP')
+                  return <article className="review-card" key={review.exerciseId}>
+                    <div>
+                      <span className="section-kicker">{course?.title ?? 'Python学習'} · {quizReview ? '理解度クイズ' : '練習問題'}</span>
+                      <strong>{quizReview ? lesson.quiz.question : lesson.practice.title}</strong>
+                      <p>{lesson.title} · {lesson.summary}</p>
+                      <small>{review.incorrectAttempts}回の不正解 · 最終挑戦: {lastAttempt} · {review.dueAt <= reviewNow ? '復習できます' : `次の復習: ${dueAt}`} · ヒント{review.hintLevel}段階 · 最後に正解: {review.correctAt ? new Date(review.correctAt).toLocaleString('ja-JP') : '未正解'}</small>
+                    </div>
+                    <button type="button" className="secondary-button" onClick={() => openReview(review)}>この問題を復習</button>
+                  </article>
                 })}
               </div>
             )}
@@ -764,9 +906,12 @@ export function LearningPage() {
             <div className="glossary-grid">
               {glossaryEntries.map((entry) => (
                 <article className="glossary-card" key={entry.term}>
-                  <div><strong>{entry.term}</strong><span>{entry.reading}</span></div>
+                  <div><strong>{entry.term}</strong><span>{entry.reading}</span><small>{entry.category}</small></div>
                   <p>{entry.meaning}</p>
-                  <button type="button" className="ghost-button" onClick={() => openReview(entry.lessonId)}>関連レッスンへ<ChevronRight size={15} /></button>
+                  {entry.usage && <p><strong>使いどころ:</strong> {entry.usage}</p>}
+                  {entry.exampleCode && <pre>{entry.exampleCode}</pre>}
+                  {entry.exampleOutput !== undefined && <p><strong>実行結果:</strong> <code>{entry.exampleOutput}</code></p>}
+                  <button type="button" className="ghost-button" onClick={() => openLesson(entry.lessonId)}>関連レッスンへ<ChevronRight size={15} /></button>
                 </article>
               ))}
               {glossaryEntries.length === 0 && <p className="learning-empty">一致する用語がありません。</p>}

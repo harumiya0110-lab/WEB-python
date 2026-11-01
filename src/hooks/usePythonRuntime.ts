@@ -8,7 +8,7 @@ import {
 } from '../python/tablePreviewState'
 
 export interface OutputLine {
-  channel: 'stdout' | 'stderr' | 'system' | 'input'
+  channel: 'stdout' | 'stderr' | 'error' | 'system' | 'input'
   text: string
   id: number
 }
@@ -107,7 +107,7 @@ export function usePythonRuntime() {
           activeExecutionRef.current = null
           setPendingInput(null)
           setDurationMs(message.durationMs ?? null)
-          appendOutput('stderr', message.message)
+          appendOutput('error', message.message)
           if (message.executionId === undefined) {
             setStatus('error')
             setStatusMessage(`Python環境の初期化に失敗しました: ${message.message}`)
@@ -121,7 +121,7 @@ export function usePythonRuntime() {
       setPendingInput(null)
       setStatus('error')
       setStatusMessage('Python Workerでエラーが発生しました。')
-      appendOutput('stderr', event.message || 'Python Workerで予期しないエラーが発生しました。')
+      appendOutput('error', event.message || 'Python Workerで予期しないエラーが発生しました。')
     }
     workerRef.current = worker
     worker.postMessage({ type: 'INIT' } satisfies WorkerRequest)

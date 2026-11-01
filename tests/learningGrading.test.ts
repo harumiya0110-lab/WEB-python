@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   createPythonFunctionTestHarness,
+  getExpectedOutputForInputs,
   gradePythonFunctionTests,
   gradePythonOutput,
 } from '../src/python/learningGrading'
@@ -36,18 +37,68 @@ describe('learning output grading', () => {
   })
 
   it('grades all function test cases and removes the private result marker from output', () => {
-    expect(gradePythonFunctionTests('debug output\n__PYSTUDIO_FUNCTION_TESTS__:[true,false,true]', 3)).toEqual({
+    const cases = [
+      { arguments: [1, 2], expected: 3 },
+      { arguments: [10, 20], expected: 30 },
+      { arguments: [-5, 5], expected: 0 },
+    ]
+    expect(gradePythonFunctionTests(
+      'debug output\n__PYSTUDIO_FUNCTION_TESTS__:[{"passed":true,"actual":3},{"passed":false,"actual":29},{"passed":true,"actual":0}]',
+      cases,
+    )).toEqual({
       correct: false,
       passedCount: 2,
       totalCount: 3,
       firstFailedCase: 2,
+      failedCase: { arguments: [10, 20], expected: 30, actual: 29, error: undefined },
       userOutput: 'debug output',
     })
   })
 
   it('requires a valid result marker matching the number of cases', () => {
-    expect(gradePythonFunctionTests('output only', 2)).toBeNull()
-    expect(gradePythonFunctionTests('__PYSTUDIO_FUNCTION_TESTS__:not-json', 2)).toBeNull()
-    expect(gradePythonFunctionTests('__PYSTUDIO_FUNCTION_TESTS__:[true]', 2)).toBeNull()
+    const cases = [{ arguments: [1], expected: 2 }, { arguments: [3], expected: 4 }]
+    expect(gradePythonFunctionTests('output only', cases)).toBeNull()
+    expect(gradePythonFunctionTests('__PYSTUDIO_FUNCTION_TESTS__:not-json', cases)).toBeNull()
+    expect(gradePythonFunctionTests('__PYSTUDIO_FUNCTION_TESTS__:[{"passed":true}]', cases)).toBeNull()
+  })
+
+  it('reports the failing function arguments, expected value, actual value, and error', () => {
+    const cases = [
+      { arguments: [2, 3], expected: 5 },
+      { arguments: [-2, 5], expected: 3 },
+    ]
+    expect(gradePythonFunctionTests(
+      'debug\n__PYSTUDIO_FUNCTION_TESTS__:[{"passed":true,"actual":5},{"passed":false,"actual":-3}]',
+      cases,
+    )).toMatchObject({
+      passedCount: 1,
+      totalCount: 2,
+      firstFailedCase: 2,
+      failedCase: { arguments: [-2, 5], expected: 3, actual: -3 },
+      userOutput: 'debug',
+    })
+    expect(gradePythonFunctionTests(
+      '__PYSTUDIO_FUNCTION_TESTS__:[{"passed":false,"error":"ValueError: bad input"}]',
+      [{ arguments: ['bad'], expected: 1 }],
+    )?.failedCase?.error).toBe('ValueError: bad input')
+  })
+
+  it('grades interactive output against the actual string or number input', () => {
+    expect(getExpectedOutputForInputs(
+      { type: 'template', template: 'こんにちは {0}' },
+      ['Aoi'],
+    )).toBe('こんにちは Aoi')
+    expect(getExpectedOutputForInputs(
+      { type: 'integer-add', operand: 3 },
+      ['8'],
+    )).toBe('11')
+    expect(getExpectedOutputForInputs(
+      { type: 'integer-add', operand: 3 },
+      ['8.5'],
+    )).toBeNull()
+    expect(getExpectedOutputForInputs(
+      { type: 'template', template: 'こんにちは {1}' },
+      ['Aoi'],
+    )).toBeNull()
   })
 })

@@ -4,6 +4,11 @@ export interface LearningTerm {
   term: string
   reading: string
   meaning: string
+  usage?: string
+  exampleCode?: string
+  exampleOutput?: string
+  relatedTerms?: string[]
+  category?: string
 }
 
 export interface LearningQuiz {
@@ -12,6 +17,7 @@ export interface LearningQuiz {
   choices: string[]
   answer: string
   explanation: string
+  choiceExplanations?: Record<string, string>
 }
 
 export type PythonTestValue = string | number | boolean | null | PythonTestValue[] | { [key: string]: PythonTestValue }
@@ -20,6 +26,10 @@ export interface PythonFunctionTestCase {
   arguments: PythonTestValue[]
   expected: PythonTestValue
 }
+
+export type LearningInputGradingRule =
+  | { type: 'template'; template: string }
+  | { type: 'integer-add'; operand: number }
 
 export interface LessonPractice {
   title: string
@@ -31,6 +41,7 @@ export interface LessonPractice {
   scoreHint?: string
   functionName?: string
   testCases?: PythonFunctionTestCase[]
+  inputGradingRule?: LearningInputGradingRule
 }
 
 export interface LearningLesson {
@@ -38,6 +49,10 @@ export interface LearningLesson {
   courseId: string
   title: string
   summary: string
+  explanation?: string
+  syntax?: string
+  sampleLineExplanations?: string[]
+  prerequisites?: string[]
   objective: string[]
   keyPoints: string[]
   terms: LearningTerm[]

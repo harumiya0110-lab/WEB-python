@@ -14,7 +14,7 @@ export interface LearningAttemptRecord {
   lessonId: string
   exerciseId: string
   submittedAnswer: string
-  result: 'correct' | 'partial' | 'incorrect' | 'error'
+  result: 'correct' | 'partial' | 'incorrect' | 'error' | 'timeout'
   hintLevel: number
   solutionViewed: boolean
   attemptedAt: number
@@ -69,6 +69,7 @@ export interface PyStudioDatabase extends DBSchema {
       correctAt: number | null
       hintLevel: number
       solutionViewed: boolean
+      correctStreak?: number
     }
   }
 }
