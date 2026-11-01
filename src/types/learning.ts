@@ -14,6 +14,13 @@ export interface LearningQuiz {
   explanation: string
 }
 
+export type PythonTestValue = string | number | boolean | null | PythonTestValue[] | { [key: string]: PythonTestValue }
+
+export interface PythonFunctionTestCase {
+  arguments: PythonTestValue[]
+  expected: PythonTestValue
+}
+
 export interface LessonPractice {
   title: string
   prompt: string
@@ -22,6 +29,8 @@ export interface LessonPractice {
   hints: [string, string, string]
   solution: string
   scoreHint?: string
+  functionName?: string
+  testCases?: PythonFunctionTestCase[]
 }
 
 export interface LearningLesson {

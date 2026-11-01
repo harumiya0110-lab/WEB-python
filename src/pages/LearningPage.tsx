@@ -19,7 +19,11 @@ import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { allLessons, firstLessonId, learningCourses, lessonMap } from '../data/learningCatalog'
 import { usePythonRuntime } from '../hooks/usePythonRuntime'
-import { gradePythonOutput } from '../python/learningGrading'
+import {
+  createPythonFunctionTestHarness,
+  gradePythonFunctionTests,
+  gradePythonOutput,
+} from '../python/learningGrading'
 import {
   listLearningAttempts,
   listLearningReviews,
@@ -145,7 +149,7 @@ export function LearningPage() {
   } = usePythonRuntime()
   const runKindRef = useRef<'sample' | 'exercise' | null>(null)
   const runStartedRef = useRef(false)
-  const runInfoRef = useRef({ lessonId: '', expectedOutput: '', code: '', hintLevel: 0, solutionViewed: false })
+  const runInfoRef = useRef({ lessonId: '', expectedOutput: '', code: '', hintLevel: 0, solutionViewed: false, testCaseCount: 0 })
 
   const selectedLesson = useMemo<LearningLesson>(
     () => lessonMap.get(selectedLessonId) ?? allLessons[0]!,
@@ -249,8 +253,8 @@ export function LearningPage() {
       setSampleOutput(stdout || (stderr ? 'エラーが発生しました。' : '出力はありません。'))
       return
     }
-    setExerciseOutput(stdout)
     if (stderr.includes('Traceback') || stderr.includes('実行時間の上限')) {
+      setExerciseOutput(stdout)
       const message = stderr.includes('実行時間の上限')
         ? '実行時間の上限に達しました。処理を短くしてもう一度試してください。'
         : `${describeError(stderr)}\n${stderr.slice(-500)}`
@@ -266,12 +270,26 @@ export function LearningPage() {
       }).then(refreshHistory).catch((error: unknown) => setStorageError(error instanceof Error ? error.message : '回答履歴を保存できませんでした。'))
       return
     }
-    const grade = gradePythonOutput(runInfo.expectedOutput, stdout)
-    const correct = grade.correct
+    const functionGrade = runInfo.testCaseCount > 0
+      ? gradePythonFunctionTests(stdout, runInfo.testCaseCount)
+      : null
+    if (runInfo.testCaseCount > 0 && !functionGrade) {
+      setExerciseOutput(stdout)
+      setExerciseScore('error')
+      setExerciseFeedback('テスト結果を読み取れませんでした。コードを確認して、もう一度実行してください。')
+      return
+    }
+    setExerciseOutput(functionGrade?.userOutput ?? stdout)
+    const outputGrade = gradePythonOutput(runInfo.expectedOutput, stdout)
+    const correct = functionGrade?.correct ?? outputGrade.correct
     setExerciseScore(correct ? 'correct' : 'incorrect')
     setExerciseFeedback(correct
-      ? '正解です。実行結果が期待する出力と一致しました。'
-      : `出力が期待した結果と異なります。期待する結果: ${grade.expected || '（何も表示しない）'}。実際の出力: ${grade.actual || '（何も表示しない）'}。出力の順番や値を確認しましょう。`)
+      ? functionGrade
+        ? `正解です。${functionGrade.passedCount}/${functionGrade.totalCount}件のテストケースに合格しました。`
+        : '正解です。実行結果が期待する出力と一致しました。'
+      : functionGrade
+        ? `テストケース${functionGrade.firstFailedCase}で期待した戻り値と異なりました（${functionGrade.passedCount}/${functionGrade.totalCount}件正解）。引数の処理を確認しましょう。`
+        : `出力が期待した結果と異なります。期待する結果: ${outputGrade.expected || '（何も表示しない）'}。実際の出力: ${outputGrade.actual || '（何も表示しない）'}。出力の順番や値を確認しましょう。`)
     void recordLearningAttempt({
       lessonId: runInfo.lessonId,
       exerciseId: runInfo.lessonId,
@@ -343,6 +361,11 @@ export function LearningPage() {
 
   const beginRun = (mode: 'sample' | 'exercise') => {
     const source = mode === 'sample' ? selectedLesson.sampleCode : code
+    const testCases = mode === 'exercise' ? selectedLesson.practice.testCases : undefined
+    const functionName = mode === 'exercise' ? selectedLesson.practice.functionName : undefined
+    const runnableSource = testCases && functionName
+      ? `${source}\n\n${createPythonFunctionTestHarness(functionName, testCases)}`
+      : source
     clearOutput()
     setSampleOutput('')
     setExerciseOutput('')
@@ -356,8 +379,9 @@ export function LearningPage() {
       code: source,
       hintLevel,
       solutionViewed: solutionVisible,
+      testCaseCount: testCases?.length ?? 0,
     }
-    const started = run({ 'lesson.py': source }, 'lesson.py')
+    const started = run({ 'lesson.py': runnableSource }, 'lesson.py')
     if (!started) {
       runKindRef.current = null
       setExerciseFeedback(status === 'ready' ? '実行環境が準備できていません。少し待ってから再試行してください。' : '実行中の処理が終わってから再度実行してください。')

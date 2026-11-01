@@ -18,6 +18,10 @@ describe('Python learning curriculum', () => {
       expect(lesson.practice.hints, lesson.id).toHaveLength(3)
       expect(lesson.practice.solution.trim(), lesson.id).not.toBe('')
       expect(lesson.quiz.choices, lesson.id).toContain(lesson.quiz.answer)
+      if (lesson.practice.testCases) {
+        expect(lesson.practice.functionName, lesson.id).toBeTruthy()
+        expect(lesson.practice.testCases.length, lesson.id).toBeGreaterThan(1)
+      }
     }
   })
 })

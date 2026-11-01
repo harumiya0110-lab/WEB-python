@@ -1,4 +1,4 @@
-import type { LearningCourse } from '../types/learning'
+import type { LearningCourse, PythonFunctionTestCase } from '../types/learning'
 
 export const learningCourses: LearningCourse[] = [
   {
@@ -230,6 +230,8 @@ interface LessonSeed {
   solution: string
   term: string
   mistake: string
+  functionName?: string
+  testCases?: PythonFunctionTestCase[]
 }
 
 function createCourse(
@@ -276,6 +278,8 @@ function createCourse(
             `次のような形を出発点にできます: ${seed.solution.split('\n')[0]}`,
           ],
           solution: seed.solution,
+          functionName: seed.functionName,
+          testCases: seed.testCases,
         },
         quiz: {
           id: `${lessonId}-quiz`,
@@ -326,7 +330,7 @@ learningCourses.push(
   createCourse('functions', '関数', '処理を名前の付いたまとまりにして、再利用する方法を学びます。', '中級', [
     { id: 'def', title: '関数を定義する', summary: 'defで関数を作り、名前を付けた処理を呼び出せます。', sample: 'def greet():\n    print("こんにちは")\ngreet()', output: 'こんにちは', task: 'greetという関数を作り、「こんにちは」と表示してください。', starter: '# defでgreet関数を作って呼び出しましょう\n', solution: 'def greet():\n    print("こんにちは")\ngreet()', term: 'def', mistake: '関数を定義しただけで呼び出さない' },
     { id: 'arguments', title: '引数を使う', summary: '引数を使うと関数に値を渡せます。', sample: 'def greet(name):\n    print("こんにちは", name)\ngreet("Aoi")', output: 'こんにちは Aoi', task: '名前を受け取るgreet関数でAoiに挨拶してください。', starter: '# 引数nameを持つgreet関数を定義しましょう\n', solution: 'def greet(name):\n    print("こんにちは", name)\ngreet("Aoi")', term: '引数', mistake: '関数定義と呼び出しで引数の数を合わせない' },
-    { id: 'return', title: '戻り値を返す', summary: 'returnは関数の計算結果を呼び出し元に返します。', sample: 'def add(a, b):\n    return a + b\nprint(add(2, 3))', output: '5', task: '2つの数を足して返すadd関数を作り、2と3で試してください。', starter: '# returnを使うadd関数を作りましょう\n', solution: 'def add(a, b):\n    return a + b\nprint(add(2, 3))', term: 'return', mistake: 'returnとprintの役割を混同する' },
+    { id: 'return', title: '戻り値を返す', summary: 'returnは関数の計算結果を呼び出し元に返します。', sample: 'def add(a, b):\n    return a + b\nprint(add(2, 3))', output: '5', task: 'add関数を定義し、2つの引数の合計をreturnしてください。複数の数値で自動採点します。', starter: '# add(a, b)を作成して合計を返しましょう\n', solution: 'def add(a, b):\n    return a + b', term: 'return', mistake: 'returnとprintの役割を混同する', functionName: 'add', testCases: [{ arguments: [1, 2], expected: 3 }, { arguments: [10, 20], expected: 30 }, { arguments: [-5, 5], expected: 0 }, { arguments: [0, 0], expected: 0 }] },
     { id: 'scope', title: '変数のスコープ', summary: '関数内で作った変数は、基本的に関数の外から直接使えません。', sample: 'def make_message():\n    message = "準備OK"\n    return message\nprint(make_message())', output: '準備OK', task: '関数内のmessageをreturnで返して表示してください。', starter: '# 関数内の値をreturnで外へ返しましょう\n', solution: 'def make_message():\n    message = "準備OK"\n    return message\nprint(make_message())', term: 'スコープ', mistake: '関数内の変数を外で直接参照する' },
   ]),
   createCourse('files-errors-modules', 'ファイル操作・例外・モジュール', 'ファイルや標準ライブラリを利用し、エラーに備える方法を学びます。', '中級', [
