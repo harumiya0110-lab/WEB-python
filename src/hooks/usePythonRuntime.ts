@@ -8,7 +8,7 @@ import {
 } from '../python/tablePreviewState'
 
 export interface OutputLine {
-  channel: 'stdout' | 'stderr' | 'system'
+  channel: 'stdout' | 'stderr' | 'system' | 'input'
   text: string
   id: number
 }
@@ -195,7 +195,7 @@ export function usePythonRuntime() {
   const submitInput = useCallback(
     (value: string) => {
       if (!pendingInput || !workerRef.current) return
-      appendOutput('stdout', `${pendingInput.prompt}${value}\n`)
+      appendOutput('input', `${pendingInput.prompt}${value}\n`)
       workerRef.current.postMessage({
         type: 'INPUT_RESPONSE',
         requestId: pendingInput.requestId,

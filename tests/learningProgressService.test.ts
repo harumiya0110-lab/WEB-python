@@ -1,14 +1,15 @@
 import 'fake-indexeddb/auto'
 import { deleteDB } from 'idb'
-import { beforeEach, describe, expect, it } from 'vitest'
-import { loadLearningProgress, saveLearningProgress } from '../src/services/learningProgressService'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-describe('learning progress service', () => {
+describe('learning persistence service', () => {
   beforeEach(async () => {
+    vi.resetModules()
     await deleteDB('pystudio')
   })
 
-  it('saves and reloads state without losing progress data', async () => {
+  it('saves and reloads learning progress and exercise drafts', async () => {
+    const service = await import('../src/services/learningProgressService')
     const initial = {
       lastLessonId: 'python-what-is-python',
       completedLessonIds: ['python-what-is-python'],
@@ -16,12 +17,28 @@ describe('learning progress service', () => {
       attemptedLessonIds: ['python-what-is-python'],
       lastUpdatedAt: 1234,
     }
+    await service.saveLearningProgress(initial)
+    await service.saveLearningDraft('python-print-basics', 'exercise', 'print("draft")')
 
-    await saveLearningProgress(initial)
-    const loaded = await loadLearningProgress()
+    expect(await service.loadLearningProgress()).toMatchObject(initial)
+    expect(await service.loadLearningDraft('python-print-basics', 'exercise')).toBe('print("draft")')
+  })
 
-    expect(loaded).toMatchObject(initial)
-    expect(loaded.lastLessonId).toBe('python-what-is-python')
-    expect(loaded.completedLessonIds).toEqual(['python-what-is-python'])
+  it('records attempts and sets a review date after an incorrect answer', async () => {
+    const service = await import('../src/services/learningProgressService')
+    await service.recordLearningAttempt({
+      lessonId: 'python-what-is-python',
+      exerciseId: 'python-what-is-python',
+      submittedAnswer: 'print("wrong")',
+      result: 'incorrect',
+      hintLevel: 1,
+      solutionViewed: false,
+    })
+    const [attempt] = await service.listLearningAttempts()
+    const [review] = await service.listLearningReviews()
+    expect(attempt?.result).toBe('incorrect')
+    expect(attempt?.hintLevel).toBe(1)
+    expect(review?.incorrectAttempts).toBe(1)
+    expect(review?.dueAt).toBeGreaterThan(Date.now())
   })
 })

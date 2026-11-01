@@ -28,7 +28,7 @@ const template: UserTemplate = {
   updatedAt: 30,
 }
 
-describe('IndexedDB v2 to v3 migration and custom templates', () => {
+describe('IndexedDB v2 to v5 migration and custom templates', () => {
   beforeAll(async () => {
     await deleteDB('pystudio')
     const oldDatabase = await openDB('pystudio', 2, {
@@ -103,6 +103,10 @@ describe('IndexedDB v2 to v3 migration and custom templates', () => {
     expect(database.objectStoreNames.contains('projects')).toBe(true)
     expect(database.objectStoreNames.contains('templateFavorites')).toBe(true)
     expect(database.objectStoreNames.contains('customTemplates')).toBe(true)
+    expect(database.objectStoreNames.contains('learningProgress')).toBe(true)
+    expect(database.objectStoreNames.contains('learningDrafts')).toBe(true)
+    expect(database.objectStoreNames.contains('learningAttempts')).toBe(true)
+    expect(database.objectStoreNames.contains('learningReview')).toBe(true)
     database.close()
   })
 })

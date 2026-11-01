@@ -11,7 +11,9 @@ import {
   Download,
   FileCode2,
   FilePlus2,
+  FileSpreadsheet,
   FolderPlus,
+  FolderUp,
   FolderTree,
   Play,
   Plus,
@@ -31,6 +33,16 @@ import { useParams } from 'react-router-dom'
 import { usePythonRuntime } from '../hooks/usePythonRuntime'
 import { pythonSamples } from '../data/pythonSamples'
 import { loadProject, saveProject } from '../services/localProjectService'
+import {
+  MAX_CSV_IMPORT_FILES,
+  MAX_PROJECT_FILE_BYTES,
+  MAX_PROJECT_TOTAL_BYTES,
+  decodeCsvBytes,
+  detectCsvEncoding,
+  getCsvImportPath,
+  validateCsvImportBatch,
+} from '../services/csvImport'
+import type { CsvEncoding, CsvImportSelection } from '../services/csvImport'
 import { createDefaultProject, useProjectStore } from '../store/projectStore'
 import { useSettingsStore } from '../store/settingsStore'
 import { isValidProjectPath } from '../types/project'
@@ -46,6 +58,11 @@ type FileDialogState =
   | { kind: 'file'; initialValue: string }
   | { kind: 'folder'; initialValue: string }
   | { kind: 'rename'; path: string; initialValue: string }
+
+interface CsvImportReview {
+  candidates: CsvImportSelection[]
+  issues: string[]
+}
 
 const projectSaveTimers = new Map<string, number>()
 
@@ -150,6 +167,7 @@ export function EditorPage() {
   const initialize = useProjectStore((state) => state.initialize)
   const updateFile = useProjectStore((state) => state.updateFile)
   const addFile = useProjectStore((state) => state.addFile)
+  const addFiles = useProjectStore((state) => state.addFiles)
   const duplicateFile = useProjectStore((state) => state.duplicateFile)
   const addDirectory = useProjectStore((state) => state.addDirectory)
   const deleteDirectory = useProjectStore((state) => state.deleteDirectory)
@@ -198,6 +216,9 @@ export function EditorPage() {
   const [commandQuery, setCommandQuery] = useState('')
   const [fileDialog, setFileDialog] = useState<FileDialogState | null>(null)
   const [fileDialogValue, setFileDialogValue] = useState('')
+  const [csvImportReview, setCsvImportReview] = useState<CsvImportReview | null>(null)
+  const [csvImportReading, setCsvImportReading] = useState(false)
+  const [csvImportProgress, setCsvImportProgress] = useState('')
   const [sampleLibraryOpen, setSampleLibraryOpen] = useState(false)
   const [dangerConfirmation, setDangerConfirmation] = useState<{
     title: string
@@ -207,6 +228,8 @@ export function EditorPage() {
   } | null>(null)
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const editorRef = useRef<Monaco.IStandaloneCodeEditor | null>(null)
+  const csvFilesInputRef = useRef<HTMLInputElement | null>(null)
+  const csvFolderInputRef = useRef<HTMLInputElement | null>(null)
   const isMountedRef = useRef(false)
   const notificationTimer = useRef<number | undefined>(undefined)
   const [search, setSearch] = useState('')
@@ -216,6 +239,96 @@ export function EditorPage() {
     window.clearTimeout(notificationTimer.current)
     notificationTimer.current = window.setTimeout(() => setNotification(''), 2600)
   }, [])
+
+  const inspectCsvFiles = useCallback(async (fileList: FileList | null) => {
+    const files = Array.from(fileList ?? [])
+    if (files.length === 0) return
+    if (files.length > MAX_CSV_IMPORT_FILES) {
+      notify(`一度に追加できるCSVは${MAX_CSV_IMPORT_FILES}件までです。`)
+      return
+    }
+    setCsvImportReview({ candidates: [], issues: [] })
+    setCsvImportReading(true)
+    let selectedBytes = 0
+    const candidates: CsvImportSelection[] = []
+    const issues: string[] = []
+    try {
+      for (const [index, file] of files.entries()) {
+        setCsvImportProgress(`CSVを確認しています（${index + 1}/${files.length}）…`)
+        const path = getCsvImportPath(file.name, file.webkitRelativePath)
+        if (!path.toLowerCase().endsWith('.csv')) {
+          issues.push(`${path || file.name}: CSVファイルではありません。`)
+          continue
+        }
+        if (file.size > MAX_PROJECT_FILE_BYTES) {
+          issues.push(`${path}: ファイルが上限（2MB）を超えています。`)
+          continue
+        }
+        selectedBytes += file.size
+        if (selectedBytes > MAX_PROJECT_TOTAL_BYTES) {
+          issues.push(`${path}: 選択したファイルの合計が20MBを超えています。`)
+          continue
+        }
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        const detected = detectCsvEncoding(bytes)
+        candidates.push({ path, bytes, encoding: detected === 'unknown' ? null : detected })
+      }
+      setCsvImportReview({ candidates, issues })
+    } catch (error) {
+      notify(error instanceof Error ? `CSVを読み込めませんでした: ${error.message}` : 'CSVを読み込めませんでした。')
+      setCsvImportReview(null)
+    } finally {
+      setCsvImportReading(false)
+      setCsvImportProgress('')
+    }
+  }, [notify])
+
+  const updateCsvEncoding = (path: string, encoding: CsvEncoding | null) => {
+    setCsvImportReview((current) => current
+      ? {
+          ...current,
+          candidates: current.candidates.map((candidate) =>
+            candidate.path === path ? { ...candidate, encoding } : candidate,
+          ),
+        }
+      : current)
+  }
+
+  const importCsvFiles = useCallback(() => {
+    if (!csvImportReview) return
+    const decoded: { path: string; contents: string }[] = []
+    const issues = [...csvImportReview.issues]
+    for (const candidate of csvImportReview.candidates) {
+      if (!candidate.encoding) {
+        issues.push(`${candidate.path}: 文字コードを選択してください。`)
+        continue
+      }
+      try {
+        decoded.push({ path: candidate.path, contents: decodeCsvBytes(candidate.bytes, candidate.encoding) })
+      } catch (error) {
+        issues.push(`${candidate.path}: ${error instanceof Error ? error.message : '文字コードを判別できませんでした。'}`)
+      }
+    }
+    const currentProject = useProjectStore.getState().project
+    const validation = validateCsvImportBatch(decoded, currentProject.files, currentProject.directories)
+    issues.push(...validation.rejected.map(({ path, reason }) => `${path}: ${reason}`))
+    if (validation.accepted.length > 0) {
+      const imported = Object.fromEntries(validation.accepted.map(({ path, contents }) => [path, contents]))
+      addFiles(imported)
+      setExpandedFolders((current) => {
+        const next = new Set(current)
+        for (const { path } of validation.accepted) {
+          const parts = path.split('/')
+          for (let index = 1; index < parts.length; index += 1) next.add(parts.slice(0, index).join('/'))
+        }
+        return next
+      })
+      notify(`${validation.accepted.length}件のCSVをプロジェクトに追加しました。`)
+      setCsvImportReview(issues.length > 0 ? { candidates: [], issues } : null)
+    } else {
+      setCsvImportReview({ candidates: [], issues: issues.length > 0 ? issues : ['追加できるCSVがありません。'] })
+    }
+  }, [addFiles, csvImportReview, notify])
 
   const copyTable = useCallback(async (table: (typeof tablePreviews)[number]) => {
     try {
@@ -237,6 +350,7 @@ export function EditorPage() {
 
   useEffect(() => {
     isMountedRef.current = true
+    csvFolderInputRef.current?.setAttribute('webkitdirectory', '')
     return () => {
       isMountedRef.current = false
     }
@@ -706,10 +820,35 @@ export function EditorPage() {
             <div className="panel-heading">
               <span>エクスプローラー</span>
               <div>
+                <button type="button" title="CSVファイルを追加" aria-label="CSVファイルを追加" onClick={() => csvFilesInputRef.current?.click()}><FileSpreadsheet size={15} /></button>
+                <button type="button" title="CSVフォルダーを追加" aria-label="CSVフォルダーを追加" onClick={() => csvFolderInputRef.current?.click()}><FolderUp size={15} /></button>
                 <button type="button" title="新しいファイル" onClick={createFile}><FilePlus2 size={15} /></button>
                 <button type="button" title="新しいフォルダー" onClick={createFolder}><FolderPlus size={15} /></button>
               </div>
             </div>
+            <input
+              ref={csvFilesInputRef}
+              className="visually-hidden"
+              type="file"
+              accept=".csv,text/csv"
+              multiple
+              aria-label="追加するCSVファイルを選択"
+              onChange={(event) => {
+                void inspectCsvFiles(event.currentTarget.files)
+                event.currentTarget.value = ''
+              }}
+            />
+            <input
+              ref={csvFolderInputRef}
+              className="visually-hidden"
+              type="file"
+              multiple
+              aria-label="CSVを含むフォルダーを選択"
+              onChange={(event) => {
+                void inspectCsvFiles(event.currentTarget.files)
+                event.currentTarget.value = ''
+              }}
+            />
             <div className="project-tree-title">
               <ChevronDown size={14} />
               <span>{project.name.toUpperCase()}</span>
@@ -1250,6 +1389,56 @@ export function EditorPage() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+      {csvImportReading && (
+        <div className="command-palette-backdrop" role="status" aria-live="polite">
+          <div className="file-action-dialog csv-import-progress">{csvImportProgress || 'CSVを確認しています…'}</div>
+        </div>
+      )}
+      {csvImportReview && (
+        <div
+          className="command-palette-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setCsvImportReview(null)
+          }}
+        >
+          <section className="file-action-dialog csv-import-dialog" role="dialog" aria-modal="true" aria-labelledby="csv-import-title">
+            <header>
+              <div>
+                <h2 id="csv-import-title">CSVファイルを追加</h2>
+                <p>文字コードを確認してから、プロジェクトに追加します。既存ファイルは上書きしません。</p>
+              </div>
+              <button type="button" aria-label="閉じる" onClick={() => setCsvImportReview(null)}><X size={18} /></button>
+            </header>
+            {csvImportReview.candidates.length > 0 && (
+              <div className="csv-import-list">
+                {csvImportReview.candidates.map((candidate) => (
+                  <label key={candidate.path} className="csv-import-item">
+                    <span>{candidate.path}</span>
+                    <select
+                      value={candidate.encoding ?? ''}
+                      aria-label={`${candidate.path}の文字コード`}
+                      onChange={(event) => updateCsvEncoding(candidate.path, event.target.value === '' ? null : event.target.value as CsvEncoding)}
+                    >
+                      <option value="">文字コードを選択</option>
+                      <option value="utf-8">UTF-8（BOM含む）</option>
+                      <option value="shift_jis">Shift_JIS</option>
+                    </select>
+                  </label>
+                ))}
+              </div>
+            )}
+            {csvImportReview.issues.length > 0 && (
+              <ul className="csv-import-errors" role="alert">
+                {csvImportReview.issues.map((issue, index) => <li key={`${index}-${issue}`}>{issue}</li>)}
+              </ul>
+            )}
+            <div className="file-dialog-actions">
+              <button type="button" onClick={() => setCsvImportReview(null)}>キャンセル</button>
+              <button className="dialog-primary" type="button" onClick={importCsvFiles} disabled={csvImportReview.candidates.length === 0}>CSVを追加</button>
+            </div>
+          </section>
         </div>
       )}
       {dangerConfirmation && (

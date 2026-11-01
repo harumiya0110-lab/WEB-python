@@ -1,0 +1,5 @@
+export const MAX_PROJECT_FILE_BYTES = 2 * 1024 * 1024
+export const MAX_PROJECT_TOTAL_BYTES = 20 * 1024 * 1024
+export const MAX_CSV_IMPORT_FILES = 20
+export const MAX_CSV_PROJECT_FILES = 98
+export const MAX_CSV_PROJECT_DIRECTORIES = 100

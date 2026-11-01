@@ -3435,6 +3435,110 @@
   line-height: 1.6;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.csv-import-dialog {
+  display: flex;
+  max-height: min(80vh, 720px);
+  flex-direction: column;
+  gap: 14px;
+}
+
+.csv-import-dialog > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.csv-import-dialog > header h2 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 19px;
+}
+
+.csv-import-dialog > header p {
+  margin: 7px 0 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.csv-import-dialog > header button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.csv-import-list {
+  display: flex;
+  max-height: 45vh;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+}
+
+.csv-import-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text);
+  font-size: 12px;
+}
+
+.csv-import-item > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.csv-import-item select {
+  min-height: 34px;
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.csv-import-errors {
+  max-height: 130px;
+  margin: 0;
+  padding: 10px 12px 10px 30px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.csv-import-progress {
+  color: var(--color-text);
+  font-size: 13px;
+}
+
 .template-create-actions {
   display: flex;
   justify-content: flex-end;

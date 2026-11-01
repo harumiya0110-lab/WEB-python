@@ -18,9 +18,10 @@ export interface LessonPractice {
   title: string
   prompt: string
   starter: string
-  requiredStrings: string[]
-  expectedOutput?: string
-  scoreHint: string
+  expectedOutput: string
+  hints: [string, string, string]
+  solution: string
+  scoreHint?: string
 }
 
 export interface LearningLesson {
@@ -33,6 +34,8 @@ export interface LearningLesson {
   terms: LearningTerm[]
   sampleCode: string
   expectedOutput: string
+  commonMistakes: string[]
+  nextStep: string
   practice: LessonPractice
   quiz: LearningQuiz
 }
@@ -51,4 +54,10 @@ export interface LearningProgressState {
   startedLessonIds: string[]
   attemptedLessonIds: string[]
   lastUpdatedAt: number
+  practicePassedLessonIds?: string[]
+  quizPassedLessonIds?: string[]
+  notes?: Record<string, string>
+  favoriteLessonIds?: string[]
+  hintUsage?: Record<string, number>
+  solutionViewedExerciseIds?: string[]
 }
