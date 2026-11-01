@@ -2,23 +2,26 @@ import Editor from '@monaco-editor/react'
 import {
   AlertCircle,
   BookOpen,
+  Copy,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
   CirclePlay,
-  Clock3,
   Code2,
+  Library,
   Lightbulb,
+  RotateCcw,
   Search,
   Square,
   Star,
+  X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { allLessons, firstLessonId, learningCourses, lessonMap } from '../data/learningCatalog'
-import { pythonGlossary } from '../data/pythonGlossary'
+import { buildPythonGlossary, getPythonGlossaryCategories, pythonGlossary, searchPythonGlossary } from '../data/pythonGlossary'
 import { usePythonRuntime } from '../hooks/usePythonRuntime'
 import {
   createPythonFunctionTestHarness,
@@ -39,7 +42,7 @@ import {
 import { getDatabase } from '../services/database'
 import { saveProject } from '../services/localProjectService'
 import { useSettingsStore } from '../store/settingsStore'
-import type { LearningCourse, LearningInputTestCase, LearningLesson, LearningProgressState, LearningTerm, PythonFunctionTestCase } from '../types/learning'
+import type { LearningCourse, LearningInputTestCase, LearningLesson, LearningProgressState, PythonFunctionTestCase } from '../types/learning'
 
 type LearningSection = 'study' | 'review' | 'glossary'
 type ScoreState = 'correct' | 'incorrect' | 'error' | null
@@ -72,20 +75,6 @@ function outputFor(lines: Array<{ channel: string; text: string }>): string {
   return lines.filter((line) => line.channel === 'stdout').map((line) => line.text).join('')
 }
 
-function getGlossaryCategory(courseId: string): string {
-  if (courseId === 'python-intro') return '基本'
-  if (courseId === 'variable-types') return '変数・データ型'
-  if (courseId === 'operators') return '演算子'
-  if (courseId === 'conditionals') return '条件分岐'
-  if (courseId === 'loops') return '繰り返し'
-  if (courseId === 'sequences' || courseId === 'dictionary-strings') return 'リスト・辞書'
-  if (courseId === 'functions') return '関数'
-  if (courseId === 'object-oriented') return 'クラス'
-  if (courseId === 'files-errors-modules') return 'ファイル操作・例外処理'
-  if (courseId === 'data-analysis') return 'データ分析'
-  return '実践・発展'
-}
-
 function describeError(text: string): string {
   const explanations: Array<[string, string]> = [
     ['SyntaxError', '文法の書き方を確認しましょう。かっこや引用符、コロンの閉じ忘れがよくある原因です。'],
@@ -112,6 +101,13 @@ export function LearningPage() {
   const [selectedLessonId, setSelectedLessonId] = useState(firstLessonId)
   const [selectedCourseId, setSelectedCourseId] = useState(learningCourses[0]?.id ?? '')
   const [section, setSection] = useState<LearningSection>('study')
+  const [reviewQuery, setReviewQuery] = useState('')
+  const [glossaryQuery, setGlossaryQuery] = useState('')
+  const [glossaryCategory, setGlossaryCategory] = useState('すべて')
+  const [expandedGlossaryTerm, setExpandedGlossaryTerm] = useState('')
+  const [copiedGlossaryTerm, setCopiedGlossaryTerm] = useState('')
+  const [copyError, setCopyError] = useState('')
+  const [reviewFocusTarget, setReviewFocusTarget] = useState<'practice' | 'quiz' | null>(null)
   const [code, setCode] = useState('')
   const [draftLoadedId, setDraftLoadedId] = useState('')
   const [selectedQuizAnswer, setSelectedQuizAnswer] = useState('')
@@ -125,7 +121,6 @@ export function LearningPage() {
   const [exerciseOutput, setExerciseOutput] = useState('')
   const [inputValue, setInputValue] = useState('')
   const [storageError, setStorageError] = useState('')
-  const [query, setQuery] = useState('')
   const [attempts, setAttempts] = useState<Awaited<ReturnType<typeof listLearningAttempts>>>([])
   const [reviews, setReviews] = useState<Awaited<ReturnType<typeof listLearningReviews>>>([])
   const [notes, setNotes] = useState('')
@@ -187,6 +182,12 @@ export function LearningPage() {
   const incorrectAttempts = attempts.filter((attempt) => attempt.result === 'incorrect' || attempt.result === 'partial').length
   const executionErrors = attempts.filter((attempt) => attempt.result === 'error' || attempt.result === 'timeout').length
   const dueReviews = reviews.filter((review) => review.incorrectAttempts > 0 && review.dueAt <= reviewNow)
+  const reviewTargets = useMemo(
+    () => reviews.filter((review) => review.incorrectAttempts > 0).sort((left, right) => left.dueAt - right.dueAt),
+    [reviews],
+  )
+  const todayReviews = useMemo(() => reviewTargets.filter((review) => review.dueAt <= reviewNow), [reviewNow, reviewTargets])
+  const upcomingReviews = useMemo(() => reviewTargets.filter((review) => review.dueAt > reviewNow), [reviewNow, reviewTargets])
 
   const refreshHistory = useCallback(async () => {
     const [nextAttempts, nextReviews] = await Promise.all([listLearningAttempts(), listLearningReviews()])
@@ -608,11 +609,11 @@ export function LearningPage() {
     setQuizExplanationVisible(false)
   }
 
-  const toggleFavorite = async () => {
+  const toggleFavoriteLesson = async (lessonId: string) => {
     const current = progress.favoriteLessonIds ?? []
-    const favorites = current.includes(selectedLesson.id)
-      ? current.filter((id) => id !== selectedLesson.id)
-      : [...current, selectedLesson.id]
+    const favorites = current.includes(lessonId)
+      ? current.filter((id) => id !== lessonId)
+      : [...current, lessonId]
     setProgress((value) => ({ ...value, favoriteLessonIds: favorites }))
     try {
       await (await getDatabase()).put('learningBookmarks', favorites, 'guest')
@@ -621,34 +622,33 @@ export function LearningPage() {
     }
   }
 
-  const glossaryEntries = useMemo(() => {
-    const entries = new Map<string, LearningTerm & { lessonId: string; courseId: string }>()
-    for (const course of learningCourses) {
-      for (const lesson of course.lessons) {
-        for (const term of lesson.terms) {
-          if (!entries.has(term.term)) entries.set(term.term, {
-            ...term,
-            lessonId: lesson.id,
-            courseId: course.id,
-            category: getGlossaryCategory(course.id),
-          })
-        }
-      }
-      for (const term of pythonGlossary) {
-        const lesson = lessonMap.get(term.lessonId)
-        if (lesson && !entries.has(term.term)) {
-          entries.set(term.term, {
-            ...term,
-            courseId: lesson.courseId,
-            category: term.category ?? getGlossaryCategory(lesson.courseId),
-          })
-        }
-      }
+  const toggleFavorite = () => toggleFavoriteLesson(selectedLesson.id)
+
+  const copyGlossaryCode = async (term: string, exampleCode: string) => {
+    try {
+      await navigator.clipboard.writeText(exampleCode)
+      setCopiedGlossaryTerm(term)
+      setCopyError('')
+      window.setTimeout(() => setCopiedGlossaryTerm((current) => current === term ? '' : current), 2000)
+    } catch (error) {
+      setCopyError(error instanceof Error ? `コードをコピーできませんでした: ${error.message}` : 'コードをコピーできませんでした。ブラウザーの権限を確認してください。')
     }
-    return [...entries.values()].filter((entry) =>
-      `${entry.term} ${entry.reading} ${entry.meaning} ${entry.usage ?? ''} ${entry.category ?? ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
-    )
-  }, [query])
+  }
+
+  const openRelatedTerm = (term: string) => {
+    setGlossaryCategory('すべて')
+    setGlossaryQuery(term)
+    setExpandedGlossaryTerm(term)
+    window.setTimeout(() => document.getElementById(`glossary-${term}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+  }
+
+  const glossaryEntries = useMemo(() => buildPythonGlossary(learningCourses, pythonGlossary), [])
+  const glossaryCategories = useMemo(() => getPythonGlossaryCategories(glossaryEntries), [glossaryEntries])
+  const filteredGlossaryEntries = useMemo(() => searchPythonGlossary(
+    glossaryEntries,
+    glossaryQuery,
+    glossaryCategory,
+  ), [glossaryCategory, glossaryEntries, glossaryQuery])
 
   const filteredReviews = useMemo(() => {
     return [...reviews]
@@ -657,13 +657,32 @@ export function LearningPage() {
       .filter((review) => {
         const lesson = lessonMap.get(review.lessonId)
         const prompt = lesson && (review.exerciseId === lesson.quiz.id ? lesson.quiz.question : lesson.practice.title)
-        return lesson && `${prompt} ${lesson.title} ${lesson.summary}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())
+        return lesson && `${prompt} ${lesson.title} ${lesson.summary} ${learningCourses.find((course) => course.id === lesson.courseId)?.title ?? ''}`
+          .toLocaleLowerCase().includes(reviewQuery.trim().toLocaleLowerCase())
       })
-  }, [query, reviews])
+  }, [reviewQuery, reviews])
+
+  useEffect(() => {
+    if (section !== 'study' || !reviewFocusTarget) return
+    const selector = reviewFocusTarget === 'quiz' ? '.learning-quiz' : '.learning-exercise'
+    const timer = window.setTimeout(() => {
+      const target = document.querySelector(selector)
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      window.setTimeout(() => setReviewFocusTarget(null), 3000)
+    }, 60)
+    return () => window.clearTimeout(timer)
+  }, [reviewFocusTarget, section, selectedLessonId])
 
   const courseProgress = useMemo(
     () => learningCourses.map((course) => ({ course, ...getCourseProgress(course, progress.completedLessonIds) })),
     [progress.completedLessonIds],
+  )
+  const favoriteLessons = useMemo(
+    () => (progress.favoriteLessonIds ?? []).flatMap((lessonId) => {
+      const lesson = lessonMap.get(lessonId)
+      return lesson ? [lesson] : []
+    }),
+    [progress.favoriteLessonIds],
   )
   const currentIndex = currentCourse.lessons.findIndex((lesson) => lesson.id === selectedLesson.id)
   const allLessonsCompleted = allLessons.every((lesson) => progress.completedLessonIds.includes(lesson.id))
@@ -733,11 +752,8 @@ export function LearningPage() {
     const lesson = lessonMap.get(review.lessonId)
     if (!lesson) return
     const isQuiz = review.exerciseId === lesson.quiz.id
+    setReviewFocusTarget(isQuiz ? 'quiz' : 'practice')
     selectLesson(lesson, lesson.courseId)
-    window.setTimeout(() => {
-      document.querySelector(isQuiz ? '.learning-quiz' : '.learning-exercise')
-        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }, 0)
   }
 
   const openLesson = (lessonId: string | null | undefined) => {
@@ -748,49 +764,59 @@ export function LearningPage() {
 
   return (
     <div className="learning-page">
-      <aside className="learning-sidebar">
-        <div className="learning-panel-header">
-          <div>
-            <span className="section-kicker">LEARNING PATH</span>
-            <h2>Python学習</h2>
+      {storageError && <div className="learning-storage-error" role="alert"><AlertCircle size={16} />{storageError}<button type="button" onClick={() => setStorageError('')}>閉じる</button></div>}
+      <nav className="learning-tabs" aria-label="学習メニュー">
+        <button type="button" className={section === 'study' ? 'is-active' : ''} aria-current={section === 'study' ? 'page' : undefined} onClick={() => setSection('study')}>
+          <BookOpen size={20} aria-hidden="true" /><span><strong>レッスン</strong><small>Pythonの基礎から応用まで、コースごとに学習できます。</small></span>
+        </button>
+        <button type="button" className={section === 'review' ? 'is-active' : ''} aria-current={section === 'review' ? 'page' : undefined} onClick={() => setSection('review')}>
+          <RotateCcw size={20} aria-hidden="true" /><span><strong>復習する</strong><small>{dueReviews.length > 0 ? `今日の復習 ${dueReviews.length}問` : '間違えた問題や復習予定を確認できます。'}</small></span>
+          <span className={`learning-nav-count${dueReviews.length > 0 ? ' has-due' : ''}`} aria-label={`今日の復習 ${dueReviews.length}問`}>{dueReviews.length}</span>
+        </button>
+        <button type="button" className={section === 'glossary' ? 'is-active' : ''} aria-current={section === 'glossary' ? 'page' : undefined} onClick={() => setSection('glossary')}>
+          <Library size={20} aria-hidden="true" /><span><strong>用語辞典</strong><small>{glossaryEntries.length}語を収録</small></span>
+        </button>
+      </nav>
+
+      <div className={`learning-layout${section === 'study' ? '' : ' is-secondary'}`}>
+        {section === 'study' && <aside className="learning-sidebar">
+          <div className="learning-panel-header">
+            <div>
+              <span className="section-kicker">LEARNING PATH</span>
+              <h2>Python学習</h2>
+            </div>
           </div>
-        </div>
-        <nav className="learning-tabs" aria-label="学習メニュー">
-          <button type="button" className={section === 'study' ? 'is-active' : ''} onClick={() => setSection('study')}><BookOpen size={16} />レッスン</button>
-          <button type="button" className={section === 'review' ? 'is-active' : ''} onClick={() => setSection('review')}><Clock3 size={16} />復習 <span>{dueReviews.length}</span></button>
-          <button type="button" className={section === 'glossary' ? 'is-active' : ''} onClick={() => setSection('glossary')}><Search size={16} />用語辞典</button>
-        </nav>
-        <div className="course-list" role="list" aria-label="学習コース">
-          {courseProgress.map(({ course, percent, lessonCount, completeCount }) => (
-            <button
-              key={course.id}
-              type="button"
-              className={`course-card${course.id === currentCourse.id ? ' is-selected' : ''}`}
-              onClick={() => {
-                const lesson = course.lessons[0]
-                if (lesson) selectLesson(lesson, course.id)
-              }}
-            >
-              <div className="course-headline"><span>{course.difficulty} · {lessonCount}項目</span><strong>{completeCount}/{lessonCount}</strong></div>
-              <h3>{course.title}</h3>
-              <p>{course.description}</p>
-              <div className="mini-progress" aria-label={`進捗 ${percent}%`}><span style={{ width: `${percent}%` }} /></div>
-            </button>
-          ))}
-        </div>
-        <div className="sidebar-lessons">
-          <strong>このコースのレッスン</strong>
-          {currentCourse.lessons.map((lesson) => (
-            <button type="button" key={lesson.id} className={lesson.id === selectedLesson.id ? 'is-active' : ''} onClick={() => selectLesson(lesson, currentCourse.id)}>
-              <span>{lesson.title}</span>
-              {progress.completedLessonIds.includes(lesson.id) && <CheckCircle2 size={14} aria-label="完了" />}
-            </button>
-          ))}
-        </div>
-      </aside>
+          <div className="course-list" role="list" aria-label="学習コース">
+            {courseProgress.map(({ course, percent, lessonCount, completeCount }) => (
+              <button
+                key={course.id}
+                type="button"
+                className={`course-card${course.id === currentCourse.id ? ' is-selected' : ''}`}
+                aria-current={course.id === currentCourse.id ? 'true' : undefined}
+                onClick={() => {
+                  const lesson = course.lessons[0]
+                  if (lesson) selectLesson(lesson, course.id)
+                }}
+              >
+                <div className="course-headline"><span>{course.difficulty} · {lessonCount}項目</span><strong>{completeCount}/{lessonCount}</strong></div>
+                <h3>{course.title}</h3>
+                <p>{course.description}</p>
+                <div className="mini-progress" aria-label={`進捗 ${percent}%`}><span style={{ width: `${percent}%` }} /></div>
+              </button>
+            ))}
+          </div>
+          <div className="sidebar-lessons">
+            <strong>このコースのレッスン</strong>
+            {currentCourse.lessons.map((lesson) => (
+              <button type="button" key={lesson.id} className={lesson.id === selectedLesson.id ? 'is-active' : ''} aria-current={lesson.id === selectedLesson.id ? 'true' : undefined} onClick={() => selectLesson(lesson, currentCourse.id)}>
+                <span>{lesson.title}</span>
+                {progress.completedLessonIds.includes(lesson.id) && <CheckCircle2 size={14} aria-label="完了" />}
+              </button>
+            ))}
+          </div>
+        </aside>}
 
       <main className="learning-main">
-        {storageError && <div className="learning-storage-error" role="alert"><AlertCircle size={16} />{storageError}<button type="button" onClick={() => setStorageError('')}>閉じる</button></div>}
         {section === 'study' && (
           <>
             <section className="learning-summary">
@@ -803,7 +829,6 @@ export function LearningPage() {
                 <button type="button" className="primary-button subtle" onClick={() => openLesson(progress.lastLessonId)}>
                   前回の続きから学ぶ
                 </button>
-                {dueReviews.length > 0 && <button type="button" className="ghost-button" onClick={() => setSection('review')}>復習問題へ</button>}
               </div>
               {progress.startedLessonIds.length === 0 && (
                 <div className="learning-start-guide">
@@ -812,17 +837,46 @@ export function LearningPage() {
                   <button type="button" className="primary-button" onClick={() => selectLesson(learningCourses[0]!.lessons[0]!, learningCourses[0]!.id)}>Pythonの基礎から始める</button>
                 </div>
               )}
-              <div className="stats-grid">
-                <StatCard label="完了レッスン" value={`${progress.completedLessonIds.length}/${allLessons.length}`} />
-                <StatCard label="開始したレッスン" value={`${progress.startedLessonIds.length}`} />
-                <StatCard label="挑戦回数" value={`${allAttempts}`} />
-                <StatCard label="正解した回答" value={`${correctAttempts}`} />
-                <StatCard label="不正解" value={`${incorrectAttempts}`} />
-                <StatCard label="実行エラー" value={`${executionErrors}`} />
-                <StatCard label="正答率" value={`${accuracy}%`} />
-                <StatCard label="復習待ち" value={`${dueReviews.length}`} />
-                <StatCard label="お気に入り" value={`${progress.favoriteLessonIds?.length ?? 0}`} />
+              <div className="stats-grid learning-priority-stats">
+                <StatCard label="学習全体の進捗" value={`${progress.completedLessonIds.length}/${allLessons.length}`} />
+                <button type="button" className="stat-card stat-card-button" onClick={() => setSection('review')}>
+                  <span>今日の復習</span><strong>{dueReviews.length}問</strong><small>復習センターを開く</small>
+                </button>
+                <button type="button" className="stat-card stat-card-button" onClick={() => {
+                  const favorites = document.getElementById('learning-favorites')
+                  if (favorites instanceof HTMLDetailsElement) favorites.open = true
+                  favorites?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                }}>
+                  <span>お気に入り</span><strong>{favoriteLessons.length}件</strong><small>登録したレッスンを確認</small>
+                </button>
+                <StatCard label="前回の学習" value={lessonMap.get(progress.lastLessonId ?? '')?.title ?? '未開始'} />
               </div>
+              <details className="learning-more-stats">
+                <summary>学習の詳しい統計を見る</summary>
+                <div className="stats-grid">
+                  <StatCard label="開始したレッスン" value={`${progress.startedLessonIds.length}`} />
+                  <StatCard label="挑戦回数" value={`${allAttempts}`} />
+                  <StatCard label="正解した回答" value={`${correctAttempts}`} />
+                  <StatCard label="不正解" value={`${incorrectAttempts}`} />
+                  <StatCard label="実行エラー" value={`${executionErrors}`} />
+                  <StatCard label="正答率" value={`${accuracy}%`} />
+                  <StatCard label="復習対象の問題" value={`${reviewTargets.length}`} />
+                  <StatCard label="これからの復習" value={`${upcomingReviews.length}`} />
+                </div>
+              </details>
+              <details className="learning-favorites" id="learning-favorites">
+                <summary>お気に入りのレッスン（{favoriteLessons.length}件）</summary>
+                {favoriteLessons.length === 0
+                  ? <p className="learning-empty">レッスンの星ボタンからお気に入りに登録できます。</p>
+                  : <div className="favorite-list">{favoriteLessons.map((lesson) => (
+                    <article key={lesson.id}>
+                      <button type="button" className="favorite-open" onClick={() => openLesson(lesson.id)}>
+                        <strong>{lesson.title}</strong><span>{lesson.summary}</span>
+                      </button>
+                      <button type="button" className="ghost-button" onClick={() => void toggleFavoriteLesson(lesson.id)} aria-label={`${lesson.title}をお気に入りから解除`}>解除</button>
+                    </article>
+                  ))}</div>}
+              </details>
               <article className="recommended-lesson">
                 <div><span className="section-kicker">{allLessonsCompleted ? '次のステップ' : 'おすすめの次のレッスン'}</span><strong>{allLessonsCompleted ? '基礎レッスンを完了しました' : recommendedLesson.title}</strong><p>{allLessonsCompleted ? '実践プログラミングや応用課題で、学んだ文法を組み合わせてみましょう。' : recommendedLesson.summary}</p></div>
                 <button type="button" className="secondary-button" onClick={() => selectLesson(recommendedLesson, recommendedLesson.courseId)}>{allLessonsCompleted ? '実践課題を開く' : '学習を始める'}<ChevronRight size={15} /></button>
@@ -896,7 +950,7 @@ export function LearningPage() {
                 </div>
 
                 <aside className="lesson-practice">
-                  <article className="info-block learning-exercise">
+                  <article className={`info-block learning-exercise${reviewFocusTarget === 'practice' ? ' is-review-highlight' : ''}`} tabIndex={-1}>
                     <div className="exercise-title"><Code2 size={17} /><h3>学習用コード練習</h3></div>
                     <p>{selectedLesson.practice.prompt}</p>
                     {selectedLesson.practice.inputGradingRule && <p className="input-grading-note">自分で入力して実行する方法と、複数の設定済み入力例で答え合わせする方法を選べます。</p>}
@@ -949,7 +1003,7 @@ export function LearningPage() {
                     {solutionVisible && <div className="solution-box"><strong>解答例</strong><pre>{selectedLesson.practice.solution}</pre><p>解答例を参考にしたあと、コードを自分なりに変えて再実行してみましょう。</p></div>}
                   </article>
 
-                  <article className="info-block learning-quiz">
+                  <article className={`info-block learning-quiz${reviewFocusTarget === 'quiz' ? ' is-review-highlight' : ''}`} tabIndex={-1}>
                     <div className="exercise-title"><CircleHelp size={17} /><h3>理解度クイズ</h3></div>
                     <p>{selectedLesson.quiz.question}</p>
                     <fieldset>
@@ -978,53 +1032,161 @@ export function LearningPage() {
 
         {section === 'review' && (
           <section className="learning-summary learning-secondary-page">
-            <div className="summary-top"><div><span className="section-kicker">REVIEW</span><h1>復習する</h1><p>間違えた問題は、もう一度練習できます。自分のペースで取り組みましょう。</p></div></div>
-            <label className="learning-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="レッスンを検索" aria-label="復習問題を検索" /></label>
-            {filteredReviews.length === 0 ? <p className="learning-empty">復習できる問題はまだありません。練習やクイズで間違えた問題がここに表示されます。</p> : (
-              <div className="review-list">
-                {filteredReviews.map((review) => {
-                  const lesson = lessonMap.get(review.lessonId)
-                  if (!lesson) return null
-                  const quizReview = review.exerciseId === lesson.quiz.id
-                  const course = learningCourses.find((item) => item.id === lesson.courseId)
-                  const lastAttempt = new Date(review.lastAttemptAt).toLocaleString('ja-JP')
-                  const dueAt = new Date(review.dueAt).toLocaleString('ja-JP')
-                  return <article className="review-card" key={review.exerciseId}>
-                    <div>
-                      <span className="section-kicker">{course?.title ?? 'Python学習'} · {quizReview ? '理解度クイズ' : '練習問題'}</span>
-                      <strong>{quizReview ? lesson.quiz.question : lesson.practice.title}</strong>
-                      <p>{lesson.title} · {lesson.summary}</p>
-                      <small>{review.incorrectAttempts}回の不正解 · 最終挑戦: {lastAttempt} · {review.dueAt <= reviewNow ? '復習できます' : `次の復習: ${dueAt}`} · ヒント{review.hintLevel}段階 · 最後に正解: {review.correctAt ? new Date(review.correctAt).toLocaleString('ja-JP') : '未正解'}</small>
-                    </div>
-                    <button type="button" className="secondary-button" onClick={() => openReview(review)}>この問題を復習</button>
-                  </article>
-                })}
+            <header className="secondary-page-header">
+              <span className="section-kicker">REVIEW CENTER</span>
+              <h1>復習センター</h1>
+              <p>間違えた問題をもう一度解き、時間を空けながら繰り返し復習することで、知識の定着を目指します。</p>
+            </header>
+            <div className="review-summary-grid">
+              <StatCard label="今日復習できる問題" value={`${todayReviews.length}問`} />
+              <StatCard label="今後の復習予定" value={`${upcomingReviews.length}問`} />
+              <StatCard label="復習対象の問題" value={`${reviewTargets.length}問`} />
+              <StatCard label="これまでの復習回数" value={`${reviewTargets.reduce((total, review) => total + review.attempts, 0)}回`} />
+            </div>
+            <label className="learning-search">
+              <Search size={18} aria-hidden="true" />
+              <input value={reviewQuery} onChange={(event) => setReviewQuery(event.target.value)} placeholder="問題名・レッスン名から検索" aria-label="復習問題を検索" />
+              {reviewQuery && <button type="button" className="search-clear" onClick={() => setReviewQuery('')} aria-label="復習検索をクリア"><X size={17} /></button>}
+            </label>
+
+            {reviewTargets.length === 0 ? (
+              <div className="learning-empty-state">
+                <RotateCcw size={30} aria-hidden="true" />
+                <h2>復習する問題はまだありません。</h2>
+                <p>練習問題や理解度クイズに挑戦して間違えた問題は、ここに自動で追加されます。</p>
+                <button type="button" className="primary-button" onClick={() => setSection('study')}>レッスンに戻る</button>
               </div>
+            ) : (
+              <>
+                {filteredReviews.length === 0 && <p className="learning-empty">検索条件に一致する復習問題がありません。検索語を変更してください。</p>}
+                <section className="review-section">
+                  <div className="review-section-heading"><div><h2>今日の復習</h2><p>今すぐ取り組める問題です。</p></div><strong>{filteredReviews.filter((review) => review.dueAt <= reviewNow).length}問</strong></div>
+                  {filteredReviews.filter((review) => review.dueAt <= reviewNow).length === 0
+                    ? <p className="learning-empty">{upcomingReviews.length > 0 ? '今日の復習はありません。次回の復習予定があります。' : '今日復習できる問題はありません。'}</p>
+                    : <div className="review-list">{filteredReviews.filter((review) => review.dueAt <= reviewNow).map((review) => {
+                      const lesson = lessonMap.get(review.lessonId)
+                      if (!lesson) return null
+                      const isQuiz = review.exerciseId === lesson.quiz.id
+                      const course = learningCourses.find(({ id }) => id === lesson.courseId)
+                      const overdueDays = Math.floor((reviewNow - review.dueAt) / (24 * 60 * 60 * 1000))
+                      const formatDate = (time: number) => new Date(time).toLocaleString('ja-JP', { dateStyle: 'medium', timeStyle: 'short' })
+                      return <article className="review-card" key={review.exerciseId}>
+                        <div className="review-card-content">
+                          <div className="review-card-heading"><span className="review-type">{isQuiz ? '理解度クイズ' : '練習問題'}</span><span className="review-status is-due">{overdueDays > 0 ? `${overdueDays}日超過` : '今日の復習'}</span></div>
+                          <span className="section-kicker">{course?.title ?? 'Python学習'} · {lesson.title}</span>
+                          <strong>{isQuiz ? lesson.quiz.question : lesson.practice.prompt}</strong>
+                          <dl className="review-metadata">
+                            <div><dt>不正解回数</dt><dd>{review.incorrectAttempts}回</dd></div>
+                            <div><dt>最終挑戦</dt><dd>{formatDate(review.lastAttemptAt)}</dd></div>
+                            <div><dt>次回の復習</dt><dd>{formatDate(review.dueAt)}</dd></div>
+                            <div><dt>最後に正解</dt><dd>{review.correctAt ? formatDate(review.correctAt) : 'まだ正解していません'}</dd></div>
+                            <div><dt>ヒント</dt><dd>{review.hintLevel > 0 ? `最大${review.hintLevel}段階を使用` : '未使用'}</dd></div>
+                          </dl>
+                        </div>
+                        <button type="button" className="primary-button review-open-button" onClick={() => openReview(review)}>この問題を復習する</button>
+                      </article>
+                    })}</div>}
+                </section>
+                <section className="review-section upcoming-review-section">
+                  <div className="review-section-heading"><div><h2>これからの復習</h2><p>次回の復習予定です。予定日になったら、もう一度挑戦しましょう。</p></div><strong>{filteredReviews.filter((review) => review.dueAt > reviewNow).length}問</strong></div>
+                  {filteredReviews.filter((review) => review.dueAt > reviewNow).length === 0
+                    ? <p className="learning-empty">これからの復習予定はありません。</p>
+                    : <div className="review-list">{filteredReviews.filter((review) => review.dueAt > reviewNow).map((review) => {
+                      const lesson = lessonMap.get(review.lessonId)
+                      if (!lesson) return null
+                      const isQuiz = review.exerciseId === lesson.quiz.id
+                      const course = learningCourses.find(({ id }) => id === lesson.courseId)
+                      const formatDate = (time: number) => new Date(time).toLocaleString('ja-JP', { dateStyle: 'medium', timeStyle: 'short' })
+                      return <article className="review-card upcoming-review-card" key={review.exerciseId}>
+                        <div className="review-card-content">
+                          <div className="review-card-heading"><span className="review-type">{isQuiz ? '理解度クイズ' : '練習問題'}</span><span className="review-status">次回予定</span></div>
+                          <span className="section-kicker">{course?.title ?? 'Python学習'} · {lesson.title}</span>
+                          <strong>{isQuiz ? lesson.quiz.question : lesson.practice.prompt}</strong>
+                          <dl className="review-metadata">
+                            <div><dt>不正解回数</dt><dd>{review.incorrectAttempts}回</dd></div>
+                            <div><dt>最終挑戦</dt><dd>{formatDate(review.lastAttemptAt)}</dd></div>
+                            <div><dt>次回の復習</dt><dd>{formatDate(review.dueAt)}</dd></div>
+                            <div><dt>最後に正解</dt><dd>{review.correctAt ? formatDate(review.correctAt) : 'まだ正解していません'}</dd></div>
+                            <div><dt>ヒント</dt><dd>{review.hintLevel > 0 ? `最大${review.hintLevel}段階を使用` : '未使用'}</dd></div>
+                          </dl>
+                        </div>
+                        <button type="button" className="secondary-button review-open-button" onClick={() => openReview(review)}>問題を確認する</button>
+                      </article>
+                    })}</div>}
+                </section>
+              </>
             )}
+            <details className="review-how-it-works">
+              <summary>復習の仕組み</summary>
+              <ul>
+                <li>間違えた問題は、自動的に復習対象になります。</li>
+                <li>正解すると、次回の復習までの間隔が少しずつ長くなります。</li>
+                <li>もう一度間違えた場合は、復習間隔が短くなります。</li>
+                <li>実行エラーやタイムアウトは、不正解とは別に記録されます。</li>
+                <li>復習履歴は保存され、ここでいつでも確認できます。</li>
+              </ul>
+            </details>
           </section>
         )}
 
         {section === 'glossary' && (
           <section className="learning-summary learning-secondary-page">
-            <div className="summary-top"><div><span className="section-kicker">PYTHON GLOSSARY</span><h1>Python用語辞典</h1><p>用語名や説明文から検索できます。レッスンと一緒に確認しましょう。</p></div></div>
-            <label className="learning-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="例: 変数、関数、繰り返し" aria-label="用語を検索" /></label>
-            <div className="glossary-grid">
-              {glossaryEntries.map((entry) => (
-                <article className="glossary-card" key={entry.term}>
-                  <div><strong>{entry.term}</strong><span>{entry.reading}</span><small>{entry.category}</small></div>
-                  <p>{entry.meaning}</p>
-                  {entry.usage && <p><strong>使いどころ:</strong> {entry.usage}</p>}
-                  {entry.exampleCode && <pre>{entry.exampleCode}</pre>}
-                  {entry.exampleOutput !== undefined && <p><strong>実行結果:</strong> <code>{entry.exampleOutput}</code></p>}
-                  {entry.relatedTerms && entry.relatedTerms.length > 0 && <p><strong>関連用語:</strong> {entry.relatedTerms.join('、')}</p>}
-                  <button type="button" className="ghost-button" onClick={() => openLesson(entry.lessonId)}>関連レッスンへ<ChevronRight size={15} /></button>
-                </article>
-              ))}
-              {glossaryEntries.length === 0 && <p className="learning-empty">一致する用語がありません。</p>}
+            <header className="secondary-page-header">
+              <span className="section-kicker">PYTHON GLOSSARY</span>
+              <h1>Python用語辞典</h1>
+              <p>Pythonの用語や文法、コードの使い方を調べられます。分からない言葉があったら、ここで検索してみましょう。</p>
+            </header>
+            <label className="learning-search glossary-search">
+              <Search size={20} aria-hidden="true" />
+              <input value={glossaryQuery} onChange={(event) => setGlossaryQuery(event.target.value)} placeholder="用語名・読み方・意味から検索できます" aria-label="用語名・読み方・意味から検索" />
+              {glossaryQuery && <button type="button" className="search-clear" onClick={() => setGlossaryQuery('')} aria-label="用語検索をクリア"><X size={18} /></button>}
+            </label>
+            <div className="glossary-counts" aria-live="polite">
+              <span>登録用語 <strong>{glossaryEntries.length}語</strong></span>
+              <span>検索結果 <strong>{filteredGlossaryEntries.length}語</strong></span>
+              <span>カテゴリ <strong>{glossaryCategory}</strong></span>
             </div>
+            <div className="glossary-categories" aria-label="用語カテゴリ">
+              {['すべて', ...glossaryCategories].map((category) => {
+                const count = category === 'すべて'
+                  ? glossaryEntries.length
+                  : glossaryEntries.filter((entry) => entry.category === category).length
+                return <button type="button" key={category} className={glossaryCategory === category ? 'is-active' : ''} aria-pressed={glossaryCategory === category} onClick={() => setGlossaryCategory(category)}>{category}<span>{count}</span></button>
+              })}
+            </div>
+            {copyError && <p className="glossary-copy-error" role="alert">{copyError}</p>}
+            {filteredGlossaryEntries.length === 0
+              ? <div className="learning-empty-state"><Library size={30} aria-hidden="true" /><h2>一致する用語がありません。</h2><p>検索文字やカテゴリを変更して、もう一度お試しください。</p></div>
+              : <div className="glossary-grid">
+                {filteredGlossaryEntries.map((entry) => {
+                  const linkedTerms = (entry.relatedTerms ?? []).filter((term) => glossaryEntries.some((candidate) => candidate.term === term))
+                  return <article className="glossary-card" id={`glossary-${entry.term}`} key={entry.term}>
+                    <header className="glossary-card-heading">
+                      <div><strong>{entry.term}</strong><span>{entry.reading}</span></div>
+                      <span className="glossary-category-badge">{entry.category}</span>
+                    </header>
+                    <p className="glossary-meaning">{entry.meaning}</p>
+                    <details className="glossary-details" open={expandedGlossaryTerm === entry.term} onToggle={(event) => {
+                      const isOpen = event.currentTarget.open
+                      setExpandedGlossaryTerm((current) => isOpen ? entry.term : current === entry.term ? '' : current)
+                    }}>
+                      <summary>詳しい使い方・コード例</summary>
+                      {entry.usage && <p><strong>使いどころ:</strong> {entry.usage}</p>}
+                      {entry.exampleCode && <div className="glossary-code-example">
+                        <pre><code>{entry.exampleCode}</code></pre>
+                        <button type="button" className="secondary-button" onClick={() => void copyGlossaryCode(entry.term, entry.exampleCode!)}><Copy size={15} />{copiedGlossaryTerm === entry.term ? 'コピーしました' : 'コードをコピー'}</button>
+                      </div>}
+                      {entry.exampleOutput !== undefined && <p className="glossary-output"><strong>実行結果:</strong><code>{entry.exampleOutput || '出力なし'}</code></p>}
+                      {linkedTerms.length > 0 && <div className="glossary-related-terms"><strong>関連用語</strong><div>{linkedTerms.map((term) => <button type="button" key={term} onClick={() => openRelatedTerm(term)}>{term}</button>)}</div></div>}
+                      <button type="button" className="ghost-button" onClick={() => openLesson(entry.lessonId)}>この用語を学ぶ<ChevronRight size={15} /></button>
+                    </details>
+                  </article>
+                })}
+              </div>}
           </section>
         )}
       </main>
+      </div>
     </div>
   )
 }

@@ -1,7 +1,11 @@
-import type { LearningTerm } from '../types/learning'
+import type { LearningCourse, LearningTerm } from '../types/learning'
 
 export interface PythonGlossaryEntry extends LearningTerm {
   lessonId: string
+}
+
+export interface PythonGlossaryCatalogEntry extends PythonGlossaryEntry {
+  courseId: string
 }
 
 export const pythonGlossary: PythonGlossaryEntry[] = [
@@ -9,25 +13,25 @@ export const pythonGlossary: PythonGlossaryEntry[] = [
     term: 'Python', reading: 'ぱいそん', meaning: '読みやすさを大切にした汎用プログラミング言語です。',
     usage: 'Webアプリ、データ分析、自動化など幅広い用途で使われます。',
     exampleCode: 'print("Hello, Python!")', exampleOutput: 'Hello, Python!',
-    lessonId: 'python-what-is-python', category: '基本',
+    lessonId: 'python-what-is-python', category: 'Pythonの基本',
   },
   {
     term: 'プログラム', reading: 'ぷろぐらむ', meaning: 'コンピューターに実行させる命令を、順序立ててまとめたものです。',
     usage: '入力を受け取り、処理し、結果を出す手順を作るときに使います。',
     exampleCode: 'price = 120\nprint(price)', exampleOutput: '120',
-    lessonId: 'python-what-is-python', category: '基本',
+    lessonId: 'python-what-is-python', category: 'Pythonの基本',
   },
   {
     term: 'コード', reading: 'こーど', meaning: 'プログラムを記述するために書くPythonの文です。',
     usage: 'エディターに入力し、Pythonに実行させる命令を表します。',
     exampleCode: 'print("実行します")', exampleOutput: '実行します',
-    lessonId: 'python-what-is-python', category: '基本',
+    lessonId: 'python-what-is-python', category: 'Pythonの基本',
   },
   {
     term: '実行', reading: 'じっこう', meaning: '書いたプログラムをPythonに処理させることです。',
     usage: 'コードが意図した結果を出すか確かめるときに行います。',
     exampleCode: 'print(2 + 3)', exampleOutput: '5',
-    lessonId: 'python-what-is-python', category: '基本',
+    lessonId: 'python-what-is-python', category: 'Pythonの基本',
   },
   {
     term: '値', reading: 'あたい', meaning: '数値、文字列、真偽値など、プログラムが扱うデータです。',
@@ -87,19 +91,19 @@ export const pythonGlossary: PythonGlossaryEntry[] = [
     term: 'pass', reading: 'ぱす', meaning: '何も処理を行わないことを示す文です。',
     usage: '関数やクラスなどの構造を先に作り、後で処理を追加するときに使います。',
     exampleCode: 'class Student:\n    pass\n\nprint("クラスを定義しました")',
-    exampleOutput: 'クラスを定義しました', lessonId: 'object-oriented-class-instance', category: 'クラス',
+    exampleOutput: 'クラスを定義しました', lessonId: 'object-oriented-class-instance', category: 'クラス・オブジェクト',
   },
   {
     term: 'from', reading: 'ふろむ', meaning: 'モジュールから特定の機能を選んで読み込むときに使うキーワードです。',
     usage: 'モジュール名を毎回書かずに、その機能を使いたいときに利用します。',
     exampleCode: 'from math import sqrt\nprint(sqrt(16))', exampleOutput: '4.0',
-    lessonId: 'files-errors-modules-import-module', category: '基本',
+    lessonId: 'files-errors-modules-import-module', category: 'ファイル操作',
   },
   {
     term: 'as', reading: 'あず', meaning: '読み込んだモジュールや値に別名を付けるキーワードです。',
     usage: 'モジュール名を短くしたり、with文の値を変数名で受け取ったりします。',
     exampleCode: 'import math as m\nprint(m.sqrt(9))', exampleOutput: '3.0',
-    lessonId: 'files-errors-modules-import-module', category: '基本',
+    lessonId: 'files-errors-modules-import-module', category: 'ファイル操作',
   },
   {
     term: 'finally', reading: 'ふぁいなりー', meaning: '例外が起きても起きなくても、最後に実行する処理を記述する節です。',
@@ -132,3 +136,104 @@ export const pythonGlossary: PythonGlossaryEntry[] = [
     exampleOutput: 'グラフを作成しました', lessonId: 'data-analysis-matplotlib', category: 'データ分析',
   },
 ]
+
+const glossaryRelatedTerms: Record<string, string[]> = {
+  変数: ['代入', '値', '型', 'int', 'str'],
+  代入: ['変数', '値'],
+  int: ['変数', 'str', 'float', '型', 'input()'],
+  str: ['変数', 'int', 'float', '文字列'],
+  float: ['int', 'str', '変数'],
+  for: ['range()', 'while', 'list'],
+  'range()': ['for', 'while'],
+  while: ['for', 'break'],
+  list: ['tuple', 'set', 'dict', 'append()'],
+  tuple: ['list', 'set'],
+  set: ['list', 'tuple'],
+  dict: ['list', 'キー', '値'],
+  'append()': ['list', 'インデックス'],
+  def: ['関数', '引数', 'return'],
+  return: ['def', '関数', '引数'],
+  'read_csv': ['DataFrame', 'Series', 'CSV'],
+  Series: ['DataFrame', 'read_csv'],
+  DataFrame: ['Series', 'read_csv'],
+}
+
+for (const entry of pythonGlossary) {
+  entry.relatedTerms ??= glossaryRelatedTerms[entry.term]
+}
+
+function getCourseGlossaryCategory(courseId: string, lessonId: string): string {
+  if (courseId === 'python-intro') return 'Pythonの基本'
+  if (courseId === 'variable-types') return '変数・データ型'
+  if (courseId === 'operators') return '演算子'
+  if (courseId === 'conditionals') return '条件分岐'
+  if (courseId === 'loops') return '繰り返し'
+  if (courseId === 'sequences') return 'リスト・タプル・集合'
+  if (courseId === 'dictionary-strings') return '辞書・文字列'
+  if (courseId === 'functions') return '関数'
+  if (courseId === 'object-oriented') return 'クラス・オブジェクト'
+  if (courseId === 'files-errors-modules') {
+    return lessonId.includes('try-except') ? '例外処理' : 'ファイル操作'
+  }
+  if (courseId === 'data-analysis') return 'データ分析'
+  return 'Pythonの基本'
+}
+
+export function buildPythonGlossary(
+  courses: readonly LearningCourse[],
+  curatedEntries: readonly PythonGlossaryEntry[] = pythonGlossary,
+): PythonGlossaryCatalogEntry[] {
+  const entries = new Map<string, PythonGlossaryCatalogEntry>()
+  const lessonById = new Map(courses.flatMap((course) => course.lessons.map((lesson) => [lesson.id, lesson] as const)))
+  for (const term of curatedEntries) {
+    const lesson = lessonById.get(term.lessonId)
+    if (!lesson) continue
+    entries.set(term.term, {
+      ...term,
+      relatedTerms: [...new Set([...(term.relatedTerms ?? []), ...(glossaryRelatedTerms[term.term] ?? [])])],
+      courseId: lesson.courseId,
+      category: term.category ?? getCourseGlossaryCategory(lesson.courseId, lesson.id),
+    })
+  }
+  for (const course of courses) {
+    for (const lesson of course.lessons) {
+      for (const term of lesson.terms) {
+        if (entries.has(term.term)) continue
+        entries.set(term.term, {
+          ...term,
+          relatedTerms: [...new Set([...(term.relatedTerms ?? []), ...(glossaryRelatedTerms[term.term] ?? [])])],
+          lessonId: lesson.id,
+          courseId: course.id,
+          category: term.category ?? getCourseGlossaryCategory(course.id, lesson.id),
+        })
+      }
+    }
+  }
+  return [...entries.values()]
+}
+
+export function getPythonGlossaryCategories(entries: readonly PythonGlossaryEntry[]): string[] {
+  return [...new Set(entries.map(({ category }) => category).filter((category): category is string => Boolean(category)))]
+    .sort((left, right) => left.localeCompare(right, 'ja'))
+}
+
+export function searchPythonGlossary(
+  entries: readonly PythonGlossaryEntry[],
+  query: string,
+  category = 'すべて',
+): PythonGlossaryEntry[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase()
+  return entries.filter((entry) => {
+    if (category !== 'すべて' && entry.category !== category) return false
+    if (!normalizedQuery) return true
+    const searchableText = [
+      entry.term,
+      entry.reading,
+      entry.meaning,
+      entry.usage ?? '',
+      entry.category ?? '',
+      ...(entry.relatedTerms ?? []),
+    ].join(' ').toLocaleLowerCase()
+    return searchableText.includes(normalizedQuery)
+  })
+}

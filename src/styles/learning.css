@@ -1,8 +1,99 @@
 .learning-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.learning-layout {
   display: grid;
-  grid-template-columns: minmax(230px, 300px) minmax(0, 1fr);
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
   gap: 22px;
   align-items: start;
+}
+
+.learning-layout.is-secondary {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.learning-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.learning-tabs button {
+  position: relative;
+  min-width: 0;
+  min-height: 84px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  text-align: left;
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.learning-tabs button:hover {
+  border-color: var(--color-accent);
+  transform: translateY(-1px);
+}
+
+.learning-tabs button.is-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+}
+
+.learning-tabs button > svg {
+  flex: 0 0 auto;
+}
+
+.learning-tabs button > span:first-of-type {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.learning-tabs button strong {
+  color: var(--color-text);
+  font-size: 15px;
+}
+
+.learning-tabs button small {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.learning-nav-count {
+  min-width: 25px;
+  height: 25px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.learning-nav-count.has-due {
+  background: #b91c1c;
+  color: #fff;
+}
+
+.learning-main {
+  min-width: 0;
 }
 
 .learning-sidebar,
@@ -50,6 +141,8 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  max-height: min(52vh, 480px);
+  overflow: auto;
 }
 
 .course-card {
@@ -147,6 +240,7 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
+  min-width: 0;
 }
 
 .learning-summary {
@@ -507,8 +601,22 @@
 }
 
 @media (max-width: 900px) {
-  .learning-page {
+  .learning-layout {
     grid-template-columns: 1fr;
+  }
+
+  .learning-sidebar {
+    min-width: 0;
+  }
+
+  .course-list {
+    max-height: 220px;
+    flex-direction: row;
+    overflow: auto hidden;
+  }
+
+  .course-card {
+    flex: 0 0 min(260px, 72vw);
   }
 
   .lesson-content {
@@ -532,49 +640,6 @@
   .recommended-lesson {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .learning-tabs {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 5px;
-    padding: 4px;
-    border: 1px solid var(--color-border);
-    border-radius: 10px;
-    background: var(--color-background);
-  }
-
-  .learning-tabs button {
-    min-width: 0;
-    min-height: 36px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    padding: 0 6px;
-    border: 0;
-    border-radius: 7px;
-    background: transparent;
-    color: var(--color-text-muted);
-    font: inherit;
-    font-size: 11px;
-    cursor: pointer;
-  }
-
-  .learning-tabs button.is-active {
-    background: var(--color-surface);
-    color: var(--color-accent-strong);
-    box-shadow: 0 1px 3px rgb(15 23 42 / 10%);
-  }
-
-  .learning-tabs button span {
-    min-width: 18px;
-    padding: 1px 4px;
-    border-radius: 999px;
-    background: var(--color-accent-soft);
-    color: var(--color-accent-strong);
-    font-size: 10px;
-    text-align: center;
   }
 
   .learning-storage-error {
@@ -771,128 +836,647 @@
     border-top: 1px solid var(--color-border);
   }
 
-  .learning-secondary-page {
-    min-height: 55vh;
-  }
+}
 
-  .learning-search {
-    min-height: 42px;
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    margin: 20px 0;
-    padding: 0 12px;
-    border: 1px solid var(--color-border);
-    border-radius: 9px;
-    background: var(--color-background);
-    color: var(--color-text-muted);
-  }
+.learning-secondary-page {
+  min-height: 55vh;
+}
 
-  .learning-search input {
-    min-width: 0;
-    flex: 1;
-    border: 0;
-    outline: 0;
-    background: transparent;
-    color: var(--color-text);
-    font: inherit;
-    font-size: 13px;
-  }
+.secondary-page-header h1 {
+  margin: 8px 0;
+  color: var(--color-text);
+  font-size: clamp(28px, 3vw, 38px);
+  letter-spacing: -0.8px;
+}
 
-  .review-list,
-  .glossary-grid {
-    display: grid;
+.secondary-page-header p {
+  max-width: 780px;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.learning-search {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 14px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-background);
+  color: var(--color-text-muted);
+}
+
+.glossary-search {
+  min-height: 62px;
+  margin-top: 24px;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+.learning-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.learning-search input::placeholder {
+  color: var(--color-text-muted);
+  opacity: 0.8;
+}
+
+.search-clear {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.search-clear:hover {
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
+}
+
+.glossary-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  margin: 12px 0 18px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.glossary-counts strong {
+  margin-left: 4px;
+  color: var(--color-text);
+}
+
+.glossary-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.glossary-categories button,
+.glossary-related-terms button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-background);
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.glossary-categories button.is-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  font-weight: 700;
+}
+
+.glossary-categories button span {
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.review-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 22px 0;
+}
+
+.review-summary-grid .stat-card {
+  min-height: 86px;
+}
+
+.review-section {
+  margin-top: 26px;
+}
+
+.review-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.review-section-heading h2 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 21px;
+}
+
+.review-section-heading p {
+  margin: 5px 0 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.review-section-heading > strong {
+  flex: 0 0 auto;
+  padding: 6px 11px;
+  border-radius: 999px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  font-size: 12px;
+}
+
+.review-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.review-card,
+.glossary-card {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 13px;
+  background: var(--color-background);
+}
+
+.review-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.review-card-content {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 8px;
+}
+
+.review-card-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.review-type,
+.review-status,
+.glossary-category-badge {
+  width: fit-content;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.review-status.is-due {
+  background: rgb(245 158 11 / 15%);
+  color: #b45309;
+}
+
+.review-card .section-kicker {
+  color: var(--color-text-muted);
+}
+
+.review-card-content > strong {
+  color: var(--color-text);
+  font-size: 15px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.review-metadata {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin: 5px 0 0;
+}
+
+.review-metadata > div {
+  min-width: 0;
+}
+
+.review-metadata dt {
+  color: var(--color-text-muted);
+  font-size: 10px;
+}
+
+.review-metadata dd {
+  margin: 3px 0 0;
+  color: var(--color-text);
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.review-open-button {
+  flex: 0 0 auto;
+  align-self: center;
+  min-height: 44px !important;
+}
+
+.upcoming-review-card {
+  background: var(--color-surface-subtle);
+}
+
+.review-how-it-works,
+.learning-more-stats,
+.learning-favorites {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
+.review-how-it-works summary,
+.learning-more-stats summary,
+.learning-favorites summary,
+.glossary-details summary {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  color: var(--color-accent-strong);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.review-how-it-works ul {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 2px;
+  padding-left: 20px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.learning-more-stats .stats-grid {
+  margin-top: 12px;
+}
+
+.stat-card-button {
+  align-items: flex-start;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stat-card-button:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.stat-card-button small {
+  color: var(--color-accent-strong);
+  font-size: 10px;
+}
+
+.favorite-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.favorite-list article {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.favorite-open {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.favorite-open span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.glossary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px;
+}
+
+.glossary-card {
+  display: grid;
+  gap: 12px;
+  scroll-margin: 100px;
+}
+
+.glossary-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.glossary-card-heading > div {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+}
+
+.glossary-card-heading strong {
+  color: var(--color-text);
+  font-size: 19px;
+  overflow-wrap: anywhere;
+}
+
+.glossary-card-heading > div > span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.glossary-category-badge {
+  flex: 0 0 auto;
+}
+
+.glossary-card .glossary-meaning {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.glossary-details {
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+}
+
+.glossary-details > p {
+  margin: 10px 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.glossary-code-example {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.glossary-code-example pre {
+  max-width: 100%;
+  margin: 0;
+  padding: 13px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 12px;
+  line-height: 1.65;
+  overflow: auto;
+  white-space: pre;
+}
+
+.glossary-code-example .secondary-button {
+  justify-self: start;
+  min-height: 40px;
+}
+
+.glossary-output {
+  display: grid;
+  gap: 5px;
+}
+
+.glossary-output code {
+  width: fit-content;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.glossary-related-terms {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.glossary-related-terms > strong {
+  color: var(--color-text);
+  font-size: 12px;
+}
+
+.glossary-related-terms > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.glossary-related-terms button {
+  min-height: 34px;
+  color: var(--color-accent-strong);
+}
+
+.glossary-copy-error {
+  color: #b91c1c;
+  font-size: 12px;
+}
+
+.learning-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  margin: 18px 0;
+  padding: 32px 20px;
+  border: 1px dashed var(--color-border);
+  border-radius: 14px;
+  background: var(--color-background);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.learning-empty-state h2 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 17px;
+}
+
+.learning-empty-state p {
+  max-width: 620px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.learning-empty {
+  margin: 16px 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.learning-storage-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  border: 1px solid rgb(220 38 38 / 35%);
+  border-radius: 10px;
+  background: rgb(220 38 38 / 8%);
+  color: var(--color-text);
+  font-size: 12px;
+}
+
+.learning-storage-error button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--color-accent-strong);
+  cursor: pointer;
+}
+
+.learning-page button:focus-visible,
+.learning-page input:focus-visible,
+.learning-page textarea:focus-visible,
+.learning-page summary:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+.learning-exercise.is-review-highlight,
+.learning-quiz.is-review-highlight {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 4px var(--color-accent-soft), var(--shadow-card);
+  transition: box-shadow 180ms ease;
+}
+
+@media (max-width: 900px) {
+  .review-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  .learning-page {
+    gap: 14px;
   }
 
-  .review-card,
-  .glossary-card {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
+  .learning-tabs {
+    gap: 6px;
+  }
+
+  .learning-tabs button {
+    min-height: 88px;
     align-items: flex-start;
-    gap: 11px;
-    padding: 15px;
-    border: 1px solid var(--color-border);
-    border-radius: 11px;
-    background: var(--color-background);
+    gap: 7px;
+    padding: 11px 8px;
   }
 
-  .review-card {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
+  .learning-tabs button > svg {
+    width: 17px;
+    height: 17px;
   }
 
-  .review-card > div {
-    min-width: 0;
+  .learning-tabs button > span:first-of-type {
+    gap: 4px;
   }
 
-  .review-card strong,
-  .glossary-card strong {
-    color: var(--color-text);
-    font-size: 13px;
+  .learning-tabs button strong {
+    font-size: 12px;
   }
 
-  .review-card p,
-  .glossary-card p {
-    margin: 5px 0;
-    color: var(--color-text-muted);
-    font-size: 11px;
-    line-height: 1.7;
+  .learning-tabs button small {
+    font-size: 9px;
+    line-height: 1.35;
   }
 
-  .review-card small {
-    color: var(--color-accent-strong);
+  .learning-nav-count {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    min-width: 19px;
+    height: 19px;
+    padding: 0 4px;
     font-size: 10px;
   }
 
-  .glossary-card > div {
-    display: flex;
-    align-items: baseline;
+  .review-summary-grid {
     gap: 8px;
   }
 
-  .glossary-card > div span {
-    color: var(--color-text-muted);
-    font-size: 10px;
+  .review-summary-grid .stat-card {
+    min-height: 78px;
+    padding: 12px;
   }
 
-  .learning-empty {
-    margin: 16px 0;
-    color: var(--color-text-muted);
-    font-size: 13px;
-    line-height: 1.8;
+  .review-card {
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
   }
 
-  .learning-page button:focus-visible,
-  .learning-page input:focus-visible,
-  .learning-page textarea:focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 2px;
+  .review-open-button {
+    width: 100%;
+    align-self: stretch;
   }
 
-  @media (max-width: 640px) {
-    .review-list,
-    .glossary-grid {
-      grid-template-columns: 1fr;
-    }
+  .review-metadata {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 
-    .review-card {
-      align-items: flex-start;
-      flex-direction: column;
-    }
+  .glossary-grid {
+    grid-template-columns: 1fr;
+  }
 
-    .learning-input-form > div,
-    .lesson-navigation {
-      flex-wrap: wrap;
-    }
+  .glossary-categories {
+    flex-wrap: nowrap;
+    margin-right: -6px;
+    padding: 2px 6px 8px 2px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+  }
 
-    .learning-input-form .secondary-button,
-    .lesson-navigation .ghost-button {
-      min-height: 42px;
-    }
+  .glossary-categories button {
+    flex: 0 0 auto;
+    min-height: 42px;
   }
 
   .learning-sidebar,
@@ -900,7 +1484,7 @@
   .lesson-shell,
   .lesson-copy,
   .lesson-practice {
-    padding: 16px;
+    padding: 14px;
   }
 
   .summary-top,
@@ -915,5 +1499,19 @@
 
   .stats-grid {
     grid-template-columns: 1fr;
+  }
+
+  .learning-input-form > div,
+  .lesson-navigation {
+    flex-wrap: wrap;
+  }
+
+  .learning-input-form .secondary-button,
+  .lesson-navigation .ghost-button {
+    min-height: 42px;
+  }
+
+  .review-section-heading {
+    align-items: flex-start;
   }
 }

@@ -72,6 +72,31 @@ describe('Python learning curriculum', () => {
     }
   })
 
+  it('keeps generated concept definitions separate from lesson summaries and varies quiz prompts', () => {
+    const generatedCourseIds = new Set([
+      'operators',
+      'user-input',
+      'loops',
+      'sequences',
+      'dictionary-strings',
+      'functions',
+      'files-errors-modules',
+      'object-oriented',
+      'practical-programming',
+      'advanced-python',
+      'data-analysis',
+    ])
+    const generatedLessons = allLessons.filter((lesson) => generatedCourseIds.has(lesson.courseId))
+    for (const lesson of generatedLessons) {
+      expect(lesson.terms[0]?.meaning, lesson.id).not.toBe(lesson.summary)
+      expect(lesson.terms[0]?.usage, lesson.id).toBeTruthy()
+      expect(lesson.practice.hints[2], lesson.id).not.toContain(lesson.practice.solution)
+    }
+    expect(generatedLessons.some(({ quiz }) => quiz.question.includes('サンプルを上から実行'))).toBe(true)
+    expect(generatedLessons.some(({ quiz }) => quiz.question.includes('中心になる文法'))).toBe(true)
+    expect(generatedLessons.some(({ quiz }) => quiz.question.includes('意味として'))).toBe(true)
+  })
+
   it('keeps glossary references valid and provides complete, searchable examples', () => {
     const lessonIds = new Set(allLessons.map(({ id }) => id))
     expect(new Set(pythonGlossary.map(({ term }) => term)).size).toBe(pythonGlossary.length)

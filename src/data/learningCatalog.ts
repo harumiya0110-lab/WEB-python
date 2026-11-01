@@ -232,6 +232,7 @@ interface LessonSeed {
   solution: string
   term: string
   mistake: string
+  practiceOutput?: string
   functionName?: string
   testCases?: PythonFunctionTestCase[]
   inputGradingRule?: LearningLesson['practice']['inputGradingRule']
@@ -253,6 +254,88 @@ const termReadings: Record<string, string> = {
   四則演算: 'しそくえんざん', 判定: 'はんてい', 'sum()': 'さむ', ToDoリスト: 'とぅーどぅーりすと',
   リスト内包表記: 'りすとないほうひょうき', lambda: 'らむだ', 型ヒント: 'かたひんと',
   assert: 'あさーと', CSV: 'しーえすぶい', DataFrame: 'でーたふれーむ', Matplotlib: 'まっとぷろっとりぶ',
+}
+
+const termMeanings: Record<string, string> = {
+  '%': '左の数を右の数で割ったときの余りを求める算術演算子です。',
+  '*': '数値を掛け合わせる算術演算子です。文字列と整数では文字列の繰り返しにも使えます。',
+  '+': '数値を加算する演算子です。文字列どうしでは連結にも使えます。',
+  '-': '左の数から右の数を引く算術演算子です。',
+  '==': '左右の値が等しいかを判定し、TrueまたはFalseを返す比較演算子です。',
+  '>=': '左の値が右の値以上かを判定する比較演算子です。',
+  and: '左右の条件がどちらも真のときにTrueになる論理演算子です。',
+  CSV: '表形式のデータをカンマ区切りのテキストとして保存する形式です。',
+  DataFrame: 'pandasで行と列を使って表形式のデータを扱うデータ構造です。',
+  Matplotlib: 'Pythonでグラフを作成してデータを可視化するライブラリです。',
+  四則演算: '足し算、引き算、掛け算、割り算の四つの基本的な算術計算です。',
+  ToDoリスト: 'やることと完了状況を項目ごとに管理する一覧です。',
+  '__init__()': 'インスタンスを作るときに呼び出され、初期属性などを設定する特殊メソッドです。',
+  'append()': 'リストの末尾に新しい要素を追加するメソッドです。',
+  assert: '条件が偽ならAssertionErrorを発生させ、前提やテスト結果を確認する文です。',
+  break: '現在実行中の最も内側の繰り返し処理を終了する文です。',
+  class: '属性とメソッドをまとめた独自の型を定義する文です。',
+  def: '関数を定義し、呼び出したときに実行する処理をまとめる文です。',
+  dict: 'キーと値を組み合わせてデータを保存する辞書型です。',
+  else: 'ifやelifの条件がすべて偽だった場合に実行する分岐です。',
+  except: 'try内で指定した例外が発生したときの処理を記述する節です。',
+  'float()': '数値や数値文字列を浮動小数点数に変換する組み込み関数です。',
+  for: '反復可能なデータから要素を一つずつ取り出して処理する繰り返し文です。',
+  f文字列: '文字列の中に変数や式の値を埋め込める書式化文字列です。',
+  if: '条件式が真かどうかを判定し、実行する処理を分ける文です。',
+  import: '別のモジュールに定義された機能を読み込む文です。',
+  'input()': 'キーボードから入力された一行を文字列として受け取る組み込み関数です。',
+  int: '小数部分を持たない整数を表す組み込み型です。',
+  'int()': '数値や整数形式の文字列を整数に変換する組み込み関数です。',
+  lambda: '式を一つ持つ短い無名関数を作る式です。',
+  list: '順序を保ち、要素の追加や変更ができる可変のシーケンス型です。',
+  'open()': 'ファイルを指定したモードで開き、ファイルオブジェクトを返す組み込み関数です。',
+  print: '渡された値を標準出力へ表示する組み込み関数です。',
+  'range()': '指定した範囲の整数を順に生成するイテラブルを返す組み込み関数です。',
+  return: '関数の実行を終え、呼び出し元へ値を返す文です。',
+  set: '重複する要素を持たない、順序を前提にしない集合型です。',
+  'split()': '文字列を区切り文字で分割し、部分文字列のリストを返すメソッドです。',
+  str: '文字列を表す組み込み型です。',
+  'sum()': '数値のイテラブルに含まれる値の合計を返す組み込み関数です。',
+  tuple: '順序を保ち、作成後に要素を変更できないシーケンス型です。',
+  'upper()': '文字列の英小文字を大文字にした新しい文字列を返すメソッドです。',
+  while: '条件式が真である間、ブロック内の処理を繰り返す文です。',
+  with: '処理の開始と終了を管理するコンテキストマネージャーを使う文です。',
+  インデックス: 'シーケンス内の要素の位置を表す番号で、Pythonでは先頭が0です。',
+  キー: '辞書の値を登録・検索するときの識別子です。',
+  スコープ: '変数や名前を参照できるプログラム上の範囲です。',
+  プログラム: '入力を受け取り、処理して結果を返す手順を記述した命令のまとまりです。',
+  コード: 'プログラミング言語の文法に沿って書かれた命令や式です。',
+  リスト内包表記: '反復処理と条件を使い、新しいリストを簡潔に作る構文です。',
+  メソッド: 'オブジェクトに結び付いた関数で、そのオブジェクトのデータを使った処理を行います。',
+  二重ループ: '繰り返し文の中に別の繰り返し文を置く構造です。',
+  引数: '関数を呼び出すときに渡し、関数の中で受け取って利用する値です。',
+  値: '変数やデータ構造に保存され、式で処理される具体的なデータです。',
+  型: '値がどの種類のデータで、どのような操作ができるかを示す分類です。',
+  変数: '値に名前を付けて保存し、後から参照や更新を行うための名前です。',
+  実行: '記述したプログラムを処理系に読み取らせ、処理させることです。',
+  比較演算子: '二つの値の大小や等しさを比較し、真偽値を返す演算子です。',
+  判定: '条件式を評価し、条件が成り立つかどうかを調べる処理です。',
+  条件: '真か偽かに評価され、分岐や繰り返しを制御する式です。',
+  型ヒント: '変数や関数の値に想定する型を示す注釈で、実行時の型を自動変換するものではありません。',
+  関数: '名前を付けて処理をまとめ、必要なときに呼び出せる仕組みです。',
+}
+
+const termUsages: Record<string, string> = {
+  '%': '数を一定個数ごとに分ける処理や、偶数・奇数の判定に使います。',
+  '==': 'if文などで、入力値や変数が特定の値と一致するか調べます。',
+  '>=': '点数や年齢が基準値以上かを判定します。',
+  and: '複数の条件を同時に満たす必要がある判定に使います。',
+  'append()': '買い物リストなど、作成済みリストへ要素を追加します。',
+  break: '検索結果が見つかったときなど、残りの繰り返しが不要な場合に使います。',
+  for: 'リストの全要素を表示したり、データごとに集計したりします。',
+  if: '入力内容や数値によって、異なる処理を実行したい場合に使います。',
+  'input()': '名前や数値など、実行時に利用者が入力する値を受け取ります。',
+  list: '順序のある複数の値をまとめ、後から追加・更新したい場合に使います。',
+  return: '関数の計算結果を呼び出し元へ渡し、別の処理で利用します。',
+  set: '重複を除いた一覧を作ったり、集合演算を行ったりします。',
+  tuple: '座標など、ひとまとまりで扱い変更しない値を表します。',
+  while: '回数ではなく、条件が成り立つ間だけ繰り返したい処理に使います。',
+  with: 'ファイルを安全に開き、処理後に確実に閉じたい場合に使います。',
 }
 
 const syntaxByTerm: Record<string, string> = {
@@ -332,14 +415,43 @@ function createCourse(
     difficulty,
     lessons: seeds.map((seed, index) => {
       const lessonId = `${id}-${seed.id}`
+      const termMeaning = termMeanings[seed.term] ?? seed.summary
+      const outputAnswer = seed.output || '出力なし'
+      const practiceOutput = seed.practiceOutput ?? seed.output
+      const lessonSyntax = syntaxByTerm[seed.term] ?? seed.solution.split('\n')[0]!
       const conceptChoices = [seed.term, 'print()', 'if文', 'for文', 'list', 'def']
         .filter((choice, choiceIndex, choices) => choice !== seed.term && choices.indexOf(choice) === choiceIndex)
         .slice(index % 2, index % 2 + 2)
       const quizType = index % 3
+      const definitionDistractors = [
+        '条件が真の間、同じ処理を繰り返すための文です。',
+        '値を画面へ表示するための組み込み関数です。',
+        'キーと値を組にしてデータを保存する型です。',
+        'ファイルを開いて内容を読み書きする関数です。',
+      ].filter((choice) => choice !== termMeaning)
+      const selectedDefinitionDistractors = [0, 1].map((offset) =>
+        definitionDistractors[(index + offset) % definitionDistractors.length]!,
+      )
+      const outputLines = seed.output.split('\n')
+      const numericOutput = outputLines.length === 1 && Number.isFinite(Number(seed.output))
+      const alteredOutput = outputLines.length > 1
+        ? [...outputLines].reverse().join('\n')
+        : numericOutput
+          ? String(Number(seed.output) + 1)
+          : seed.output.length > 1
+            ? seed.output.slice(0, -1)
+            : `${seed.output}0`
+      const outputDistractors = [...new Set([
+        alteredOutput,
+        seed.output ? '出力されない' : 'None',
+        '結果の順番が逆になる',
+      ])].filter((choice) => choice !== outputAnswer)
       const quizChoices = quizType === 1
         ? [seed.term, ...conceptChoices]
-        : [seed.output, `${seed.output}0`, `エラー: ${seed.term}`]
-      const quizAnswer = quizType === 1 ? seed.term : seed.output
+        : quizType === 2
+          ? [termMeaning, ...selectedDefinitionDistractors]
+          : [outputAnswer, ...outputDistractors.slice(0, 2)]
+      const quizAnswer = quizType === 1 ? seed.term : quizType === 2 ? termMeaning : outputAnswer
       const nextSeed = seeds[index + 1]
       const sampleLineExplanations = seed.sample.split('\n').map(explainSampleLine)
       return {
@@ -348,15 +460,15 @@ function createCourse(
         title: seed.title,
         summary: seed.summary,
         explanation: `${seed.summary} 今回は「${seed.task}」という身近な課題で、この考え方を実際のコードに結び付けます。`,
-        syntax: syntaxByTerm[seed.term] ?? seed.solution.split('\n')[0]!,
+        syntax: lessonSyntax,
         sampleLineExplanations,
         objective: [seed.summary, `練習では「${seed.task}」を自分のコードで解決します。`],
         keyPoints: [seed.summary, `間違えやすい点: ${seed.mistake}。実行結果とコードの対応を確認しましょう。`],
         terms: [{
           term: seed.term,
           reading: termReadings[seed.term] ?? seed.term,
-          meaning: seed.summary,
-          usage: seed.task,
+          meaning: termMeaning,
+          usage: termUsages[seed.term] ?? seed.task,
           exampleCode: seed.sample,
           exampleOutput: seed.output,
         }],
@@ -370,11 +482,11 @@ function createCourse(
           title: `${seed.title}を使ってみよう`,
           prompt: seed.task,
           starter: seed.starter,
-          expectedOutput: seed.output,
+          expectedOutput: practiceOutput,
           hints: [
-            `課題「${seed.task}」の中で、サンプルのどの値や処理を変えるか考えてみましょう。`,
-            `${seed.term}を使う位置を確認し、期待する結果「${seed.output}」へつなげましょう。`,
-            `まずはこの部分から書いてみましょう: ${seed.solution.split('\n')[0]}`,
+            `課題「${seed.task}」で、入力・処理・表示のどこを作る必要があるか整理しましょう。`,
+            `${termMeaning} 今回は「${seed.mistake}」にならないよう、式や値の種類を確かめましょう。`,
+            `基本の形は次のとおりです。\n${lessonSyntax}`,
           ],
           solution: seed.solution,
           functionName: seed.functionName,
@@ -385,17 +497,25 @@ function createCourse(
           id: `${lessonId}-quiz`,
           question: quizType === 1
             ? `課題「${seed.task}」を解くとき、中心になる文法・用語はどれですか。`
-            : `${seed.title}のサンプルを上から実行したとき、正しい結果はどれですか。`,
+            : quizType === 2
+              ? `「${seed.term}」の意味として最も正確な説明はどれですか。`
+              : `${seed.title}のサンプルを上から実行したとき、正しい結果はどれですか。`,
           choices: quizChoices,
           answer: quizAnswer,
           explanation: quizType === 1
-            ? `${seed.term}はこの課題の「${seed.task}」で使う中心的な用語です。${seed.summary}`
-            : `サンプルの${sampleLineExplanations.length}行を上から実行します。${sampleLineExplanations.join(' ')} 出力は「${seed.output}」です。`,
+            ? `${seed.term}はこの課題で使う中心的な用語です。${termMeaning}`
+            : quizType === 2
+              ? `${seed.term}は${termMeaning}`
+              : `サンプルの${sampleLineExplanations.length}行を上から実行します。${sampleLineExplanations.join(' ')} 出力は「${outputAnswer}」です。`,
           choiceExplanations: Object.fromEntries(quizChoices.map((choice) => [
             choice,
             choice === quizAnswer
-              ? (quizType === 1 ? seed.summary : `サンプルコードの結果は「${seed.output}」です。`)
-              : (quizType === 1 ? `${choice}は別の用途の文法です。課題で求められている操作に注目しましょう。` : `出力の順番や値をコードと照らし合わせて再確認しましょう。`),
+              ? (quizType === 1 ? termMeaning : quizType === 2 ? `「${seed.term}」は${termMeaning}` : `サンプルコードの結果は「${outputAnswer}」です。`)
+              : (quizType === 1
+                ? `${choice}はこの課題の中心ではありません。求められている処理と用語を結び付けましょう。`
+                : quizType === 2
+                  ? `この説明は「${seed.term}」の役割とは異なります。用語の使いどころを思い出しましょう。`
+                  : `各行の処理を追い、表示される値と順番を確認しましょう。`),
           ])),
         },
       }
@@ -417,11 +537,11 @@ for (const [courseIndex, course] of learningCourses.entries()) {
 
 learningCourses.push(
   createCourse('operators', '演算子と計算', '計算、比較、条件の組み立て方を身につけます。', '初級', [
-    { id: 'addition', title: '足し算', summary: 'プラス記号で数を足せます。', sample: 'print(4 + 3)', output: '7', task: '4と3を足して結果を表示してください。', starter: '# 足し算の結果を表示しましょう\n', solution: 'print(4 + 3)', term: '+', mistake: '文字列の足し算と数値の足し算を混同する' },
-    { id: 'subtraction', title: '引き算', summary: 'マイナス記号で数を引けます。', sample: 'print(10 - 4)', output: '6', task: '10から4を引いて表示してください。', starter: '# 引き算の結果を表示しましょう\n', solution: 'print(10 - 4)', term: '-', mistake: '引く順番を逆にする' },
+    { id: 'addition', title: '足し算', summary: 'プラス記号で数を足せます。', sample: 'print(4 + 3)', output: '7', task: '8と5を足して結果を表示してください。', starter: '# 8と5を足した結果を表示しましょう\n', solution: 'print(8 + 5)', term: '+', mistake: '文字列の足し算と数値の足し算を混同する', practiceOutput: '13' },
+    { id: 'subtraction', title: '引き算', summary: 'マイナス記号で数を引けます。', sample: 'print(10 - 4)', output: '6', task: '13から5を引いて結果を表示してください。', starter: '# 13から5を引いた結果を表示しましょう\n', solution: 'print(13 - 5)', term: '-', mistake: '引く順番を逆にする', practiceOutput: '8' },
     { id: 'multiplication', title: '掛け算', summary: 'アスタリスク * で掛け算をします。', sample: 'print(6 * 7)', output: '42', task: 'multiply(a, b)関数を作り、2つの数の積をreturnしてください。', starter: '# multiply(a, b)を作成して積を返しましょう\n', solution: 'def multiply(a, b):\n    return a * b', term: '*', mistake: '掛け算に x ではなく * を使う', functionName: 'multiply', testCases: [{ arguments: [2, 3], expected: 6 }, { arguments: [-4, 5], expected: -20 }, { arguments: [0, 7], expected: 0 }, { arguments: [1.5, 2], expected: 3.0 }] },
-    { id: 'division-remainder', title: '割り算と余り', summary: '/ は割り算、% は割った余りを求めます。', sample: 'print(9 / 2)\nprint(9 % 2)', output: '4.5\n1', task: '9を2で割った商と余りを順番に表示してください。', starter: '# / と % を使って結果を2行で表示しましょう\n', solution: 'print(9 / 2)\nprint(9 % 2)', term: '%', mistake: '商と余りを同じ演算子で計算する' },
-    { id: 'comparison', title: '比較演算子', summary: '比較演算子は条件が正しいかをTrueまたはFalseで返します。', sample: 'print(8 >= 5)\nprint(3 == 5)', output: 'True\nFalse', task: '8が5以上か、3が5と等しいかを表示してください。', starter: '# 2つの比較結果を表示しましょう\n', solution: 'print(8 >= 5)\nprint(3 == 5)', term: '比較演算子', mistake: '等しいかの比較に = を1つだけ使う' },
+    { id: 'division-remainder', title: '割り算と余り', summary: '/ は割り算、% は割った余りを求めます。', sample: 'print(9 / 2)\nprint(9 % 2)', output: '4.5\n1', task: '20を4で割った商と余りを順番に表示してください。', starter: '# / と % を使って結果を2行で表示しましょう\n', solution: 'print(20 / 4)\nprint(20 % 4)', term: '%', mistake: '商と余りを同じ演算子で計算する', practiceOutput: '5.0\n0' },
+    { id: 'comparison', title: '比較演算子', summary: '比較演算子は条件が正しいかをTrueまたはFalseで返します。', sample: 'print(8 >= 5)\nprint(3 == 5)', output: 'True\nFalse', task: '12が10以上か、7が7と等しいかを順に表示してください。', starter: '# 条件を比較して、TrueかFalseを2行で表示しましょう\n', solution: 'print(12 >= 10)\nprint(7 == 7)', term: '比較演算子', mistake: '等しいかの比較に = を1つだけ使う', practiceOutput: 'True\nTrue' },
   ]),
   createCourse('user-input', 'input()と型変換', 'ユーザーから値を受け取り、計算で使う方法を学びます。', '初級', [
     { id: 'input-string', title: 'input()で入力する', summary: 'input()はユーザーが入力した文字を受け取ります。', sample: 'name = input("名前: ")\nprint("こんにちは", name)', output: 'こんにちは PyStudio', task: 'input()で受け取った名前を「こんにちは」と一緒に表示してください。好きな名前を入力して試せます。', starter: 'name = input("名前: ")\n# nameを使って挨拶を表示しましょう\n', solution: 'name = input("名前: ")\nprint("こんにちは", name)', term: 'input()', mistake: '入力された値は文字列であることを忘れる', inputGradingRule: { type: 'template', template: 'こんにちは {0}', testCases: [{ inputs: ['Aoi'], expectedOutput: 'こんにちは Aoi' }, { inputs: ['Ren'], expectedOutput: 'こんにちは Ren' }] } },
